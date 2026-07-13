@@ -25,8 +25,12 @@ namespace MapEditor
 
             if (_loadingButtons == null)
             {
+                // LemonUI's scaleforms are Visible = false by default and Draw() is a no-op until it's set.
                 _loadingButtons = new InstructionalButtons(
-                    new InstructionalButton(Translation.Translate("Loading Model"), "b_50"));
+                    new InstructionalButton(Translation.Translate("Loading Model"), "b_50"))
+                {
+                    Visible = true,
+                };
                 _loadingButtons.Update();
             }
 

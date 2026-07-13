@@ -26,6 +26,7 @@ namespace MapEditor
 
         private void BuildInstructionalButtons()
         {
+            // LemonUI's scaleforms are Visible = false by default and Draw() is a no-op until it's set.
             _freelookButtons = new InstructionalButtons(
                 new InstructionalButton(Translation.Translate("Spawn Prop"), Control.Enter),
                 new InstructionalButton(Translation.Translate("Spawn Ped"), Control.FrontendPause),
@@ -35,7 +36,10 @@ namespace MapEditor
                 new InstructionalButton(Translation.Translate("Move Entity"), Control.Aim),
                 new InstructionalButton(Translation.Translate("Select Entity"), Control.Attack),
                 new InstructionalButton(Translation.Translate("Copy Entity"), Control.LookBehind),
-                new InstructionalButton(Translation.Translate("Delete Entity"), Control.CreatorDelete));
+                new InstructionalButton(Translation.Translate("Delete Entity"), Control.CreatorDelete))
+            {
+                Visible = true,
+            };
             _freelookButtons.Update();
 
             _selectedButtons = new InstructionalButtons(
@@ -46,14 +50,20 @@ namespace MapEditor
                 new InstructionalButton(Translation.Translate("Switch to Rotation"), Control.Duck),
                 new InstructionalButton(Translation.Translate("Copy Entity"), Control.LookBehind),
                 new InstructionalButton(Translation.Translate("Delete Entity"), Control.CreatorDelete),
-                new InstructionalButton(Translation.Translate("Accept"), Control.Attack));
+                new InstructionalButton(Translation.Translate("Accept"), Control.Attack))
+            {
+                Visible = true,
+            };
             _selectedButtons.Update();
 
             _snappedButtons = new InstructionalButtons(
                 new InstructionalButton("", Control.FrontendRb),
                 new InstructionalButton(Translation.Translate("Rotate Entity"), Control.FrontendLb),
                 new InstructionalButton(Translation.Translate("Delete Entity"), Control.CreatorDelete),
-                new InstructionalButton(Translation.Translate("Accept"), Control.Attack));
+                new InstructionalButton(Translation.Translate("Accept"), Control.Attack))
+            {
+                Visible = true,
+            };
             _snappedButtons.Update();
         }
 
