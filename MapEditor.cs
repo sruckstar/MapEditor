@@ -122,10 +122,11 @@ namespace MapEditor
 
             BuildInstructionalButtons();
 
+			// No banner, so LemonUI reserves no space above the subtitle: the menu must sit at
+			// the very top of the screen with no negative offset or it draws off-screen.
 			_objectInfoMenu = new NativeMenu("", "~b~" + Translation.Translate("PROPERTIES"))
 			{
 			    Banner = null,
-			    Offset = new PointF(0, -107),
 			};
 			_objectInfoMenu.Buttons.Visible = false;
 			_menuPool.Add(_objectInfoMenu);
