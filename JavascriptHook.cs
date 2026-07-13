@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -74,8 +74,8 @@ namespace MapEditor
         public static void StartScript(string script, List<int> identEnts)
         {
             var scriptEngine = new JScriptEngine();
-            var collection = new HostTypeCollection(Assembly.LoadFrom("scripthookvdotnet.dll"),
-                Assembly.LoadFrom("scripts\\NativeUI.dll"));
+            var collection = new HostTypeCollection(Assembly.LoadFrom("ScriptHookVDotNet3.dll"),
+                Assembly.LoadFrom("scripts\\LemonUI.SHVDN3.dll"));
             scriptEngine.AddHostObject("API", collection);
             scriptEngine.AddHostObject("host", new HostFunctions());
             scriptEngine.AddHostObject("script", new ScriptContext());
@@ -83,16 +83,14 @@ namespace MapEditor
             scriptEngine.AddHostType("List", typeof(IList));
             scriptEngine.AddHostType("KeyEventArgs", typeof(KeyEventArgs));
             scriptEngine.AddHostType("Keys", typeof(Keys));
-            
+
             foreach (var obj in identEnts)
             {
                 var name = PropStreamer.Identifications[obj];
-                if (MapEditor.IsPed(new Prop(obj)))
-                    scriptEngine.AddHostObject(name, new Ped(obj));
-                else if (MapEditor.IsVehicle(new Prop(obj)))
-                    scriptEngine.AddHostObject(name, new Vehicle(obj));
-                else if (MapEditor.IsProp(new Prop(obj)))
-                    scriptEngine.AddHostObject(name, new Prop(obj));
+                // Entity.FromHandle already hands back the concrete Ped/Vehicle/Prop.
+                var entity = Compat.Ent(obj);
+                if (entity != null)
+                    scriptEngine.AddHostObject(name, entity);
             }
 
             try
@@ -136,17 +134,17 @@ namespace MapEditor
                 return list.ToArray();
             };
 
-            UI.Notify("~r~~h~Map Javascript Error~h~~w~");
+            Compat.Notify("~r~~h~Map Javascript Error~h~~w~");
 
             foreach (var s in splitter(ex.Message, 99))
             {
-                UI.Notify(s);
+                Compat.Notify(s);
             }
 
             if (ex.InnerException != null)
                 foreach (var s in splitter(ex.InnerException.Message, 99))
                 {
-                    UI.Notify(s);
+                    Compat.Notify(s);
                 }
         }
     }
@@ -168,7 +166,7 @@ namespace MapEditor
         public void CallNative(string hash, params object[] args)
         {
             Hash ourHash;
-            if (!Hash.TryParse(hash, out ourHash))
+            if (!Enum.TryParse(hash, out ourHash))
                 return;
             Function.Call(ourHash, args.Select(o => new InputArgument(o)).ToArray());
         }
@@ -176,7 +174,7 @@ namespace MapEditor
         public object ReturnNative(string hash, int returnType, params object[] args)
         {
             Hash ourHash;
-            if (!Hash.TryParse(hash, out ourHash))
+            if (!Enum.TryParse(hash, out ourHash))
                 return null;
             var fArgs = args.Select(o => new InputArgument(o)).ToArray();
             switch ((ReturnType)returnType)
@@ -207,8 +205,8 @@ namespace MapEditor
             var start = Game.GameTime;
             while (Game.GameTime - start <= duration)
             {
-                prop.Position = NativeUI.MiscExtensions.LinearVectorLerp(prop.Position, newPos, Game.GameTime - start, duration);
-                prop.Rotation = NativeUI.MiscExtensions.LinearVectorLerp(prop.Rotation, newRot, Game.GameTime - start, duration);
+                prop.Position = Extensions.LinearVectorLerp(prop.Position, newPos, Game.GameTime - start, duration);
+                prop.Rotation = Extensions.LinearVectorLerp(prop.Rotation, newRot, Game.GameTime - start, duration);
                 Script.Yield();
             }
         }

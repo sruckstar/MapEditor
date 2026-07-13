@@ -1,7 +1,5 @@
-﻿using System;
 using System.Collections.Generic;
-using GTA;
-using NativeUI;
+using LemonUI.Menus;
 
 namespace MapEditor.API
 {
@@ -14,25 +12,28 @@ namespace MapEditor.API
 	{
 		internal static List<ModListener> Mods = new List<ModListener>();
 		internal static ModListener CurrentMod;
-	    internal static UIMenu ModMenu;
+	    internal static NativeMenu ModMenu;
 
 		internal static void InitMenu()
 		{
-		    ModMenu = new UIMenu("Map Editor", "~b~" + Translation.Translate("EXTERNAL MODS"));
+		    ModMenu = new NativeMenu("Map Editor", "~b~" + Translation.Translate("EXTERNAL MODS"));
 
-            ModMenu.DisableInstructionalButtons(true);
-			ModMenu.OnItemSelect += (menu, item, index) =>
+            ModMenu.Buttons.Visible = false;
+			ModMenu.ItemActivated += (menu, e) =>
 			{
+				var index = ModMenu.Items.IndexOf(e.Item);
+				if (index < 0 || index >= Mods.Count) return;
+
 				var tmpMod = Mods[index];
 				if (CurrentMod == tmpMod)
 				{
-					UI.Notify("~b~~h~Map Editor~h~~n~~w~Mod ~h~" + tmpMod.Name + "~h~ " + Translation.Translate("has been disconnected."));
+					Compat.Notify("~b~~h~Map Editor~h~~n~~w~Mod ~h~" + tmpMod.Name + "~h~ " + Translation.Translate("has been disconnected."));
 					CurrentMod.ModDisconnectInvoker();
 					CurrentMod = null;
 				}
 				else
 				{
-					UI.Notify("~b~~h~Map Editor~h~~n~~w~Mod ~h~" + tmpMod.Name + "~h~ " + Translation.Translate("has been connected."));
+					Compat.Notify("~b~~h~Map Editor~h~~n~~w~Mod ~h~" + tmpMod.Name + "~h~ " + Translation.Translate("has been connected."));
 					tmpMod.ModSelectInvoker();
 					CurrentMod = tmpMod;
 				}
@@ -42,7 +43,7 @@ namespace MapEditor.API
 		public static void SuscribeMod(ModListener mod)
 		{
 			Mods.Add(mod);
-			ModMenu.AddItem(new UIMenuItem(mod.ButtonString, mod.Description));
+			ModMenu.Add(new NativeItem(mod.ButtonString, mod.Description));
 		}
 	}
 

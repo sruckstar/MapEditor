@@ -1,13 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.IO;
 using System.Linq;
 using GTA;
 using GTA.Math;
 using GTA.Native;
-using NativeUI;
-using Font = GTA.Font;
 
 namespace MapEditor
 {
@@ -58,20 +55,25 @@ namespace MapEditor
 		{
 			if (StreamedInHandles.Count >= MAX_OBJECTS)
 			{
-				UI.Notify("~r~~h~Map Editor~h~~w~\nYou have reached the prop limit. You cannot place any more props.");
+				Compat.Notify("~r~~h~Map Editor~h~~w~\nYou have reached the prop limit. You cannot place any more props.");
 				return null;
-			} 
+			}
 
             if (PropCount > 0 && PropCount % 249 == 0)
                 Script.Wait(100);
 
-			var prop = new Prop(Function.Call<int>(Hash.CREATE_OBJECT_NO_OFFSET, model.Hash, position.X, position.Y, position.Z, true, true, dynamic));
+			var prop = Compat.PropFrom(Function.Call<int>(Hash.CREATE_OBJECT_NO_OFFSET, model.Hash, position.X, position.Y, position.Z, true, true, dynamic));
+			if (prop == null)
+			{
+				Compat.Notify("~r~~h~Map Editor~h~~w~~n~The prop failed to spawn.");
+				return null;
+			}
             prop.Rotation = rotation;
 			StreamedInHandles.Add(prop.Handle);
 			if (!dynamic)
 			{
 				StaticProps.Add(prop.Handle);
-				prop.FreezePosition = true;
+				prop.IsPositionFrozen = true;
 			}
 			if (q != null)
 				Quaternion.SetEntityQuaternion(prop, q);
@@ -95,7 +97,7 @@ namespace MapEditor
 
 			if (veh == null)
 			{
-				UI.Notify("~r~~h~Map Editor~h~~w~~n~I tried very hard, but the vehicle failed to load.");
+				Compat.Notify("~r~~h~Map Editor~h~~w~~n~I tried very hard, but the vehicle failed to load.");
 				return null;
 			}
 
@@ -103,7 +105,7 @@ namespace MapEditor
 			if (!dynamic)
 			{
 				StaticProps.Add(veh.Handle);
-				veh.FreezePosition = true;
+				veh.IsPositionFrozen = true;
 			}
 			if(q != null)
 				Quaternion.SetEntityQuaternion(veh, q);
@@ -121,7 +123,7 @@ namespace MapEditor
 			if (!dynamic)
 			{
 				StaticProps.Add(veh.Handle);
-				veh.FreezePosition = true;
+				veh.IsPositionFrozen = true;
 			}
 			if (q != null)
 				Quaternion.SetEntityQuaternion(veh, q);
@@ -138,7 +140,7 @@ namespace MapEditor
             var v_4 = 515;
             int newPickup = -1;
 
-            if (Game.Player.Character.IsInRangeOf(position, 30f))
+            if (Game.Player.Character.IsInRange(position, 30f))
             {
                 newPickup = Function.Call<int>(Hash.CREATE_PICKUP_ROTATE, model.Hash, position.X, position.Y,
                     position.Z, 0, 0, heading, v_4, amount, 0, false, 0);
@@ -158,11 +160,14 @@ namespace MapEditor
                 }
 
                 pcObj.Dynamic = false;
-                new Prop(pcObj.ObjectHandle).IsPersistent = true;
 
-
-                if (q != null)
-                    Quaternion.SetEntityQuaternion(new Prop(pcObj.ObjectHandle), q);
+                var pickupObject = Compat.PropFrom(pcObj.ObjectHandle);
+                if (pickupObject != null)
+                {
+                    pickupObject.IsPersistent = true;
+                    if (q != null)
+                        Quaternion.SetEntityQuaternion(pickupObject, q);
+                }
                 pcObj.UpdatePos();
             }
             
@@ -205,25 +210,37 @@ namespace MapEditor
 
         public static void RemoveVehicle(int handle)
 		{
-		    UsedModels.Remove(new Vehicle(handle).Model.Hash);
-            if(!UsedModels.Contains(new Vehicle(handle).Model.Hash))
-                new Vehicle(handle).Model.MarkAsNoLongerNeeded();
-            
-			new Vehicle(handle).Delete();
+		    var veh = Compat.VehicleFrom(handle);
+		    if (veh != null)
+		    {
+		        ReleaseModel(veh.Model);
+		        veh.Delete();
+		    }
 			if (Vehicles.Contains(handle)) Vehicles.Remove(handle);
 			if (StaticProps.Contains(handle)) StaticProps.Remove(handle);
 		}
 
 		public static void RemovePed(int handle)
 		{
-            UsedModels.Remove(new Ped(handle).Model.Hash);
-            if (!UsedModels.Contains(new Ped(handle).Model.Hash))
-                new Ped(handle).Model.MarkAsNoLongerNeeded();
-
-            new Ped(handle).Delete();
+		    var ped = Compat.PedFrom(handle);
+		    if (ped != null)
+		    {
+		        ReleaseModel(ped.Model);
+		        ped.Delete();
+		    }
 			if (Peds.Contains(handle)) Peds.Remove(handle);
 			if (StaticProps.Contains(handle)) StaticProps.Remove(handle);
         }
+
+		/// <summary>
+		/// Drops one usage of a model and releases it back to the streamer when nothing else needs it.
+		/// </summary>
+		private static void ReleaseModel(Model model)
+		{
+		    UsedModels.Remove(model.Hash);
+		    if (!UsedModels.Contains(model.Hash))
+		        model.MarkAsNoLongerNeeded();
+		}
 
 	    public static void RemovePickup(int objectHandle)
 	    {
@@ -248,12 +265,10 @@ namespace MapEditor
 
 	    public static void RemoveEntity(int handle)
 		{
-		    if (handle != 0 && new Prop(handle).Model != null)
-		    {
-		        UsedModels.Remove(new Prop(handle).Model.Hash);
-		        if (!UsedModels.Contains(new Prop(handle).Model.Hash))
-		            new Prop(handle).Model.MarkAsNoLongerNeeded();
-		    }
+		    var entity = handle != 0 ? Compat.Ent(handle) : null;
+		    if (entity != null)
+		        ReleaseModel(entity.Model);
+
 	        if (IsPickup(handle))
 	        {
 	            var ourPickup = GetPickup(handle);
@@ -262,7 +277,7 @@ namespace MapEditor
 	        }
 	        else
 	        {
-	            new Prop(handle).Delete();
+	            entity?.Delete();
 	        }
 	        if (Peds.Contains(handle)) Peds.Remove(handle);
 			if (Vehicles.Contains(handle)) Vehicles.Remove(handle);
@@ -292,12 +307,12 @@ namespace MapEditor
 
 		public static void RemoveAll()
 		{
-			StreamedInHandles.ForEach(i => new Prop(i).Delete());
+			StreamedInHandles.ForEach(i => Compat.Ent(i)?.Delete());
 			StreamedInHandles.Clear();
 			MemoryObjects.Clear();
 			StaticProps.Clear();
-			Vehicles.ForEach(v => new Vehicle(v).Delete());
-			Peds.ForEach(v => new Ped(v).Delete());
+			Vehicles.ForEach(v => Compat.Ent(v)?.Delete());
+			Peds.ForEach(v => Compat.Ent(v)?.Delete());
             Pickups.ForEach(p => p.Remove());
 			Vehicles.Clear();
 			Peds.Clear();
@@ -306,64 +321,81 @@ namespace MapEditor
 
 		public static MapObject[] GetAllEntities()
 		{
-			List<MapObject> outList =
-				StreamedInHandles.Select(
-					handle =>
-						new MapObject()
-						{
-							Dynamic = !StaticProps.Contains(handle),
-							Hash = new Prop(handle).Model.Hash,
-							Position = new Prop(handle).Position,
-							Quaternion = Quaternion.GetEntityQuaternion(new Prop(handle)),
-							Rotation = new Prop(handle).Rotation,
-							Type = ObjectTypes.Prop,
-                            Door = Doors.Contains(handle),
-                            Id = (Identifications.ContainsKey(handle) && !string.IsNullOrWhiteSpace(Identifications[handle])) ? Identifications[handle] : null,
-                        }).ToList();
+			var outList = new List<MapObject>();
+
+			foreach (int handle in StreamedInHandles)
+			{
+				var prop = Compat.Ent(handle);
+				if (prop == null) continue;
+				outList.Add(new MapObject()
+				{
+					Dynamic = !StaticProps.Contains(handle),
+					Hash = prop.Model.Hash,
+					Position = prop.Position,
+					Quaternion = Quaternion.GetEntityQuaternion(prop),
+					Rotation = prop.Rotation,
+					Type = ObjectTypes.Prop,
+					Door = Doors.Contains(handle),
+					Id = (Identifications.ContainsKey(handle) && !string.IsNullOrWhiteSpace(Identifications[handle])) ? Identifications[handle] : null,
+				});
+			}
 
 			outList.AddRange(MemoryObjects);
-			Vehicles.ForEach(
-				v =>
-					outList.Add(new MapObject()
-					{
-						Dynamic = !StaticProps.Contains(v),
-						Hash = new Vehicle(v).Model.Hash,
-						Position = new Vehicle(v).Position,
-						Quaternion = Quaternion.GetEntityQuaternion(new Vehicle(v)),
-						Rotation = new Vehicle(v).Rotation,
-						Type = ObjectTypes.Vehicle,
-                        Id = (Identifications.ContainsKey(v) && !string.IsNullOrWhiteSpace(Identifications[v])) ? Identifications[v] : null,
-                        SirensActive = ActiveSirens.Contains(v),
-                        PrimaryColor = (int)new Vehicle(v).PrimaryColor,
-                        SecondaryColor = (int)new Vehicle(v).SecondaryColor,
-                    }));
 
-			Peds.ForEach(v => outList.Add(new MapObject()
+			foreach (int v in Vehicles)
 			{
-				Dynamic = !StaticProps.Contains(v),
-				Hash = new Ped(v).Model.Hash,
-				Position = new Ped(v).Position,
-				Quaternion = Quaternion.GetEntityQuaternion(new Ped(v)),
-				Rotation = new Ped(v).Rotation,
-				Type = ObjectTypes.Ped,
-				Action = ActiveScenarios[v],
-                Id = (Identifications.ContainsKey(v) && !string.IsNullOrWhiteSpace(Identifications[v])) ? Identifications[v] : null,
-                Relationship = ActiveRelationships[v],
-				Weapon = ActiveWeapons[v],
-			}));
+				var veh = Compat.VehicleFrom(v);
+				if (veh == null) continue;
+				outList.Add(new MapObject()
+				{
+					Dynamic = !StaticProps.Contains(v),
+					Hash = veh.Model.Hash,
+					Position = veh.Position,
+					Quaternion = Quaternion.GetEntityQuaternion(veh),
+					Rotation = veh.Rotation,
+					Type = ObjectTypes.Vehicle,
+					Id = (Identifications.ContainsKey(v) && !string.IsNullOrWhiteSpace(Identifications[v])) ? Identifications[v] : null,
+					SirensActive = ActiveSirens.Contains(v),
+					PrimaryColor = (int)veh.Mods.PrimaryColor,
+					SecondaryColor = (int)veh.Mods.SecondaryColor,
+				});
+			}
 
-            Pickups.ForEach(p => outList.Add(new MapObject()
-            {
-                Dynamic = p.Dynamic,
-                Hash = p.PickupHash,
-                Position = p.RealPosition,
-                Quaternion = Quaternion.GetEntityQuaternion(new Prop(p.ObjectHandle)),
-                Rotation = new Prop(p.ObjectHandle).Rotation,
-                Type = ObjectTypes.Pickup,
-                Amount = p.Amount,
-                RespawnTimer = p.Timeout,
-                Flag = p.Flag,
-            }));
+			foreach (int v in Peds)
+			{
+				var ped = Compat.PedFrom(v);
+				if (ped == null) continue;
+				outList.Add(new MapObject()
+				{
+					Dynamic = !StaticProps.Contains(v),
+					Hash = ped.Model.Hash,
+					Position = ped.Position,
+					Quaternion = Quaternion.GetEntityQuaternion(ped),
+					Rotation = ped.Rotation,
+					Type = ObjectTypes.Ped,
+					Action = ActiveScenarios.ContainsKey(v) ? ActiveScenarios[v] : "None",
+					Id = (Identifications.ContainsKey(v) && !string.IsNullOrWhiteSpace(Identifications[v])) ? Identifications[v] : null,
+					Relationship = ActiveRelationships.ContainsKey(v) ? ActiveRelationships[v] : null,
+					Weapon = ActiveWeapons.ContainsKey(v) ? ActiveWeapons[v] : (WeaponHash?)null,
+				});
+			}
+
+			foreach (DynamicPickup p in Pickups)
+			{
+				var pickupObject = Compat.Ent(p.ObjectHandle);
+				outList.Add(new MapObject()
+				{
+					Dynamic = p.Dynamic,
+					Hash = p.PickupHash,
+					Position = p.RealPosition,
+					Quaternion = pickupObject != null ? Quaternion.GetEntityQuaternion(pickupObject) : new Quaternion(),
+					Rotation = pickupObject?.Rotation ?? new Vector3(),
+					Type = ObjectTypes.Pickup,
+					Amount = p.Amount,
+					RespawnTimer = p.Timeout,
+					Flag = p.Flag,
+				});
+			}
 
 			return outList.ToArray();
 		}
@@ -401,12 +433,12 @@ namespace MapEditor
 		{
 			var prop = obj;
 			Prop newProp = World.CreateProp(new Model(prop.Hash), prop.Position, prop.Rotation, false, false);
-			newProp.FreezePosition = !prop.Dynamic;
+			newProp.IsPositionFrozen = !prop.Dynamic;
 			StreamedInHandles.Add(newProp.Handle);
 			if (!prop.Dynamic)
 			{
 				StaticProps.Add(newProp.Handle);
-				newProp.FreezePosition = true;
+				newProp.IsPositionFrozen = true;
 			}
 			if (prop.Quaternion != null)
 				Quaternion.SetEntityQuaternion(newProp, prop.Quaternion);
@@ -432,7 +464,7 @@ namespace MapEditor
 				 marker.Rotation.X, marker.Rotation.Y, marker.Rotation.Z, marker.Scale.X, marker.Scale.Y, marker.Scale.Z,
 				 marker.Red, marker.Green, marker.Blue, marker.Alpha, marker.BobUpAndDown, marker.RotateToCamera, 2, false, false, false);
 
-			    if (marker.TeleportTarget.HasValue && Game.Player.Character.IsInRangeOf(marker.Position, Math.Max(2f, marker.Scale.X)) && !_justTeleported)
+			    if (marker.TeleportTarget.HasValue && Game.Player.Character.IsInRange(marker.Position, Math.Max(2f, marker.Scale.X)) && !_justTeleported)
 			    {
 			        if (!Game.Player.Character.IsInVehicle())
 			            Game.Player.Character.Position = marker.TeleportTarget.Value;
@@ -447,7 +479,7 @@ namespace MapEditor
 		        var isInRangeOfAny = Markers.Any(m =>
 		        {
 		            if (!m.TeleportTarget.HasValue) return false;
-		            return Game.Player.Character.IsInRangeOf(m.Position, Math.Max(2f, m.Scale.X));
+		            return Game.Player.Character.IsInRange(m.Position, Math.Max(2f, m.Scale.X));
 		        });
 
 		        if (!isInRangeOfAny) _justTeleported = false;
@@ -471,7 +503,7 @@ namespace MapEditor
 					{
 						var prop = MemoryObjects[i];
 						Prop newProp = World.CreateProp(ObjectPreview.LoadObject(prop.Hash), prop.Position, prop.Rotation, false, false);
-						newProp.FreezePosition = !prop.Dynamic;
+						newProp.IsPositionFrozen = !prop.Dynamic;
 						StreamedInHandles.Add(newProp.Handle);
 						if (!prop.Dynamic)
 						{

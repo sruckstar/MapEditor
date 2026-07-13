@@ -1,31 +1,29 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
 using GTA;
 using GTA.Native;
-using NativeUI;
 
 namespace MapEditor
 {
     public static class ObjectDatabase
     {
         public static Dictionary<string, int> MainDb;
-		
+
 	    public static List<int> InvalidHashes = new List<int>();
 
 	    public static Dictionary<string, int> VehicleDb;
 
 		public static Dictionary<string, int> PedDb;
 
-		public static Dictionary<Relationship, int> RelationshipDb = new Dictionary<Relationship, int>();
+		public static Dictionary<Relationship, RelationshipGroup> RelationshipDb = new Dictionary<Relationship, RelationshipGroup>();
 
-	    public static int BallasGroup;
+	    public static RelationshipGroup BallasGroup;
 
-	    public static int GroveGroup;
+	    public static RelationshipGroup GroveGroup;
 
         public enum PickupHash
         {
@@ -160,16 +158,15 @@ namespace MapEditor
 		    {
 			    var hash = (Relationship) Enum.Parse(typeof(Relationship), s);
 			    var group = World.AddRelationshipGroup("MAPEDITOR_" + s);
-				World.SetRelationshipBetweenGroups(hash, group, Game.Player.Character.RelationshipGroup);
-				World.SetRelationshipBetweenGroups(hash, Game.Player.Character.RelationshipGroup, group);
+				// SHVDN3 moved this off World; the last argument makes the relationship bidirectional.
+				group.SetRelationshipBetweenGroups(Game.Player.Character.RelationshipGroup, hash, true);
 				RelationshipDb.Add(hash, group);
 		    }
 
 		    BallasGroup = World.AddRelationshipGroup("MAPEDITOR_BALLAS");
 		    GroveGroup = World.AddRelationshipGroup("MAPEDITOR_GROVE");
 
-			World.SetRelationshipBetweenGroups(Relationship.Hate, BallasGroup, GroveGroup);
-			World.SetRelationshipBetweenGroups(Relationship.Hate, GroveGroup, BallasGroup);
+			BallasGroup.SetRelationshipBetweenGroups(GroveGroup, Relationship.Hate, true);
 		}
 
 		internal static void LoadInvalidHashes()

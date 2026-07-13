@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using GTA;
 using GTA.Math;
 using GTA.Native;
@@ -46,12 +46,12 @@ namespace MapEditor
             double sqy = q.Y * q.Y;
             double sqz = q.Z * q.Z;
 
-            pitchYawRoll.Y = (float)Math.Atan2(2f * q.X * q.W + 2f * q.Y * q.Z, 1 - 2f * (sqz + sqw));     // Yaw 
-            pitchYawRoll.X = (float)Math.Asin(2f * (q.X * q.Z - q.W * q.Y));                             // Pitch 
+            pitchYawRoll.Y = (float)Math.Atan2(2f * q.X * q.W + 2f * q.Y * q.Z, 1 - 2f * (sqz + sqw));     // Yaw
+            pitchYawRoll.X = (float)Math.Asin(2f * (q.X * q.Z - q.W * q.Y));                             // Pitch
             pitchYawRoll.Z = (float)Math.Atan2(2f * q.X * q.Y + 2f * q.Z * q.W, 1 - 2f * (sqy + sqz));
 
             pitchYawRoll = pitchYawRoll.TransformVector(ToDegrees);
-            
+
             pitchYawRoll = pitchYawRoll.Denormalize();
 
             pitchYawRoll = new Vector3()
@@ -94,7 +94,7 @@ namespace MapEditor
 
         public static Vector3 ForwardVector(this Vector3 vector, float yaw)
         {
-            Vector3 right;
+            Vector3 right = new Vector3();
             float cos = (float)Math.Cos(yaw + Math.PI/2.0f);
             right.X = (180f/(float)Math.PI)*cos;
             right.Y = 0f;
@@ -105,7 +105,7 @@ namespace MapEditor
 
         public static Vector3 CrossWith(Vector3 left, Vector3 right)
         {
-            Vector3 result;
+            Vector3 result = new Vector3();
             result.X = left.Y*right.Z - left.Z*right.Y;
             result.Y = left.Z*right.X - left.X*right.Z;
             result.Z = left.X*right.Y - left.Y*right.X;
@@ -116,7 +116,7 @@ namespace MapEditor
         {
             OutputArgument num1 = new OutputArgument();
             OutputArgument num2 = new OutputArgument();
-            if (!Function.Call<bool>(Hash._WORLD3D_TO_SCREEN2D, worldCoords.X, worldCoords.Y, worldCoords.Z, num1, num2))
+            if (!Function.Call<bool>(Hash.GET_SCREEN_COORD_FROM_WORLD_COORD, worldCoords.X, worldCoords.Y, worldCoords.Z, num1, num2))
             {
                 screenCoords = new Vector2();
                 return false;
@@ -207,11 +207,6 @@ namespace MapEditor
         {
             var camPos = GameplayCamera.Position;
             var camRot = GameplayCamera.Rotation;
-            const float raycastToDist = 100.0f;
-            const float raycastFromDist = 1f;
-
-            var target3D = ScreenRelToWorld(camPos, camRot, screenCoord);
-            var source3D = camPos;
 
             Entity ignoreEntity = Game.Player.Character;
             if (Game.Player.Character.IsInVehicle())
@@ -219,19 +214,7 @@ namespace MapEditor
                 ignoreEntity = Game.Player.Character.CurrentVehicle;
             }
 
-            var dir = (target3D - source3D);
-            dir.Normalize();
-            var raycastResults = World.Raycast(source3D + dir * raycastFromDist,
-                source3D + dir * raycastToDist,
-                (IntersectOptions)(1 | 16 | 256 | 2 | 4 | 8)// | peds + vehicles
-                , ignoreEntity);
-
-            if (raycastResults.DitHitAnything)
-            {
-                return raycastResults.HitCoords;
-            }
-
-            return camPos + dir * raycastToDist;
+            return RaycastEverything(screenCoord, camPos, camRot, ignoreEntity);
         }
 
         public static Vector3 RaycastEverything(Vector2 screenCoord, Vector3 camPos, Vector3 camRot, Entity toIgnore)
@@ -242,18 +225,16 @@ namespace MapEditor
             var target3D = ScreenRelToWorld(camPos, camRot, screenCoord);
             var source3D = camPos;
 
-            Entity ignoreEntity = toIgnore;
-
             var dir = (target3D - source3D);
             dir.Normalize();
             var raycastResults = World.Raycast(source3D + dir * raycastFromDist,
                 source3D + dir * raycastToDist,
-                (IntersectOptions)(1 | 16 | 256 | 2 | 4 | 8)// | peds + vehicles
-                , ignoreEntity);
+                Compat.EditorIntersectFlags,
+                toIgnore);
 
-            if (raycastResults.DitHitAnything)
+            if (raycastResults.DidHit)
             {
-                return raycastResults.HitCoords;
+                return raycastResults.HitPosition;
             }
 
             return camPos + dir * raycastToDist;
@@ -273,15 +254,10 @@ namespace MapEditor
             dir.Normalize();
             var raycastResults = World.Raycast(source3D + dir * raycastFromDist,
                 source3D + dir * raycastToDist,
-                (IntersectOptions)(1 | 16 | 256 | 2 | 4 | 8)// | peds + vehicles
-                , ignoreEntity);
+                Compat.EditorIntersectFlags,
+                ignoreEntity);
 
-            if (raycastResults.DitHitEntity)
-            {
-                return raycastResults.HitEntity;
-            }
-
-            return null;
+            return raycastResults.HitEntity;
         }
     }
 }

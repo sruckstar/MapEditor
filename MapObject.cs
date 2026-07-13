@@ -114,7 +114,9 @@ namespace MapEditor
             set
             {
                 _dynamic = value;
-                new Prop(ObjectHandle).FreezePosition = !value;
+                var obj = Compat.Ent(ObjectHandle);
+                if (obj != null)
+                    obj.IsPositionFrozen = !value;
             }
         }
 
@@ -137,7 +139,7 @@ namespace MapEditor
         public bool PickedUp { get; set; }
         public DateTime LastPickup { get; set; }
         
-        public int ObjectHandle => Function.Call<int>((Hash) 0x5099BC55630B25AE, PickupHandle);
+        public int ObjectHandle => Function.Call<int>(Hash.GET_PICKUP_OBJECT, PickupHandle);
         //public Vector3 Position => Function.Call<Vector3>(Hash.GET_PICKUP_COORDS, PickupHandle);
 
 
@@ -150,10 +152,12 @@ namespace MapEditor
 
         public Vector3 Position
         {
-            get { return new Prop(ObjectHandle).Position; }
+            get { return Compat.Ent(ObjectHandle)?.Position ?? RealPosition; }
             set
             {
-                new Prop(ObjectHandle).Position = value;
+                var obj = Compat.Ent(ObjectHandle);
+                if (obj != null)
+                    obj.Position = value;
                 RealPosition = value;
             }
         }
@@ -192,7 +196,10 @@ namespace MapEditor
 
             tmpDyn.Dynamic = Dynamic;
             tmpDyn.Timeout = Timeout;
-            new Prop(tmpDyn.ObjectHandle).IsPersistent = true;
+
+            var newObject = Compat.Ent(tmpDyn.ObjectHandle);
+            if (newObject != null)
+                newObject.IsPersistent = true;
 
             if (PickupHandle != -1)
                 Remove();
@@ -222,7 +229,7 @@ namespace MapEditor
         
         public void Update()
         {
-            var inRange = Game.Player.Character.IsInRangeOf(RealPosition, 20f);
+            var inRange = Game.Player.Character.IsInRange(RealPosition, 20f);
 
             if (inRange && PickupHandle == -1)
             {

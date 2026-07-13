@@ -344,7 +344,7 @@ public class MapEditorGeneratedMap : GTA.Script
 		    prop.Position = pos;
             prop.LodDistance = LodDistance;
             if (!dynamic)
-                prop.FreezePosition = true;
+                prop.IsPositionFrozen = true;
 		    return prop.Handle;
 	    }});
 
