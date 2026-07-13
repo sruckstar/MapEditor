@@ -450,6 +450,8 @@ namespace MapEditor
 		        _settings = new Settings();
 				SaveSettings();
 		    }
+
+		    ObjectDatabase.TrackInvalidObjects = _settings.OmitInvalidObjects;
 	    }
 
 	    private void SaveSettings()

@@ -204,7 +204,17 @@ namespace MapEditor
             objectValidationItem.CheckboxChanged += (sender, e) =>
             {
                 _settings.OmitInvalidObjects = objectValidationItem.Checked;
+                ObjectDatabase.TrackInvalidObjects = objectValidationItem.Checked;
                 SaveSettings();
+                RedrawObjectsMenu(_currentObjectType);
+            };
+
+            var resetInvalid = new NativeItem(Translation.Translate("Reset Invalid Objects"), Translation.Translate(
+                "Forgets every object marked as invalid, so they are checked against the game again next time you browse them."));
+            resetInvalid.Activated += (men, item) =>
+            {
+                ObjectDatabase.ClearInvalidHashes();
+                RedrawObjectsMenu(_currentObjectType);
             };
 
             var validate = new NativeItem(Translation.Translate("Validate Object Database"), Translation.Translate(
@@ -253,6 +263,7 @@ namespace MapEditor
             _settingsMenu.Add(snapper);
             _settingsMenu.Add(scriptItem);
             _settingsMenu.Add(objectValidationItem);
+            _settingsMenu.Add(resetInvalid);
             _settingsMenu.Add(validate);
             _settingsMenu.Add(resetGrps);
             _settingsMenu.SelectedIndex = 0;
@@ -274,6 +285,10 @@ namespace MapEditor
 
         private void OnIndexChange(NativeMenu sender, SelectedEventArgs e)
         {
+            // Rebuilding a menu moves its selection, which raises this event. Without this guard that would
+            // spawn a preview prop while the player is somewhere else entirely, e.g. in the settings menu.
+            if (!_isChoosingObject) return;
+
             int index = e.Index;
             if (index < 0 || index >= sender.Items.Count) return;
 
@@ -294,8 +309,10 @@ namespace MapEditor
                     return;
             }
 
-            if ((_previewProp == null || _previewProp.Model.Hash != requestedHash) &&
-                ((!ObjectDatabase.InvalidHashes.Contains(requestedHash) && _settings.OmitInvalidObjects) || !_settings.OmitInvalidObjects))
+            // A blacklisted model is re-checked rather than skipped: LoadObject rejects a genuinely missing
+            // model in two native calls, so there is nothing to save by trusting a stale InvalidObjects.ini,
+            // and skipping it here is what made a single bad check permanent.
+            if (_previewProp == null || _previewProp.Model.Hash != requestedHash)
             {
                 _previewProp?.Delete();
                 _previewProp = null;
@@ -306,6 +323,8 @@ namespace MapEditor
                     sender.Items[index].AltTitle = "~r~Invalid";
                     return;
                 }
+
+                sender.Items[index].AltTitle = string.Empty;
 
                 switch (_currentObjectType)
                 {
@@ -388,7 +407,7 @@ namespace MapEditor
                     foreach (var u in ObjectDatabase.MainDb)
                     {
                         var object1 = new NativeItem(u.Key);
-                        if (ObjectDatabase.InvalidHashes.Contains(u.Value))
+                        if (ObjectDatabase.TrackInvalidObjects && ObjectDatabase.InvalidHashes.Contains(u.Value))
                             object1.AltTitle = "~r~Invalid";
                         _objectsMenu.Add(object1);
                     }
@@ -434,7 +453,7 @@ namespace MapEditor
                     foreach (var u in ObjectDatabase.MainDb.Where(pair => ApplySearchQuery(searchQuery, pair.Key)))
                     {
                         var object1 = new NativeItem(u.Key);
-                        if (ObjectDatabase.InvalidHashes.Contains(u.Value))
+                        if (ObjectDatabase.TrackInvalidObjects && ObjectDatabase.InvalidHashes.Contains(u.Value))
                             object1.AltTitle = "~r~Invalid";
                         _searchMenu.Add(object1);
                     }

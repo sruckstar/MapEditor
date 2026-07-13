@@ -13,7 +13,13 @@ namespace MapEditor
     {
         public static Dictionary<string, int> MainDb;
 
-	    public static List<int> InvalidHashes = new List<int>();
+	    public static HashSet<int> InvalidHashes = new HashSet<int>();
+
+		/// <summary>
+		/// Mirrors <see cref="Settings.OmitInvalidObjects"/>. When off, models that fail to resolve are neither
+		/// flagged in the list nor remembered in InvalidObjects.ini.
+		/// </summary>
+		public static bool TrackInvalidObjects = true;
 
 	    public static Dictionary<string, int> VehicleDb;
 
@@ -169,22 +175,52 @@ namespace MapEditor
 			BallasGroup.SetRelationshipBetweenGroups(GroveGroup, Relationship.Hate, true);
 		}
 
+		private const string InvalidObjectsPath = "scripts\\InvalidObjects.ini";
+
 		internal static void LoadInvalidHashes()
 	    {
-			if(!File.Exists("scripts\\InvalidObjects.ini")) return;
-		    string[] lines = File.ReadAllLines("scripts\\InvalidObjects.ini");
+			if(!File.Exists(InvalidObjectsPath)) return;
+		    string[] lines = File.ReadAllLines(InvalidObjectsPath);
 		    foreach (string line in lines)
 		    {
-			    int val = Convert.ToInt32(line, CultureInfo.InvariantCulture);
+			    int val;
+			    // A single blank or malformed line used to throw out of the script's constructor.
+			    if (!int.TryParse(line.Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out val)) continue;
 				InvalidHashes.Add(val);
 		    }
 	    }
 
 		internal static void SaveInvalidHashes()
 	    {
-		    string output = InvalidHashes.Aggregate("", (current, hash) => current + (hash + "\r\n"));
-		    File.WriteAllText("scripts\\InvalidObjects.ini", output);
+		    File.WriteAllText(InvalidObjectsPath, string.Join("\r\n", InvalidHashes.Select(hash => hash.ToString(CultureInfo.InvariantCulture))));
 	    }
+
+		/// <summary>
+		/// Remembers that a model could not be resolved, so that browsing the list does not stall on it again.
+		/// </summary>
+		internal static void MarkHashInvalid(int hash)
+		{
+			if (!TrackInvalidObjects) return;
+			if (!InvalidHashes.Add(hash)) return;
+			SaveInvalidHashes();
+		}
+
+		/// <summary>
+		/// Clears a stale blacklist entry once the model has been proven to load after all. Entries can outlive
+		/// the reason they were added (a game update or a DLC that ships the model), so they must be revocable.
+		/// </summary>
+		internal static void MarkHashValid(int hash)
+		{
+			if (!InvalidHashes.Remove(hash)) return;
+			SaveInvalidHashes();
+		}
+
+		internal static void ClearInvalidHashes()
+		{
+			InvalidHashes.Clear();
+			if (File.Exists(InvalidObjectsPath))
+				File.Delete(InvalidObjectsPath);
+		}
 
 	    internal static void SetPedRelationshipGroup(Ped ped, string group)
 	    {

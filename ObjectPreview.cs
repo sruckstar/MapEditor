@@ -11,15 +11,16 @@ namespace MapEditor
         {
             int counter = 0;
 
+            if (hash == 0) return null;
+
             var m = new Model(hash);
 
-	        if (!m.IsValid || !m.IsInCdImage)
+	        // Only disown the model when both natives agree it does not exist. IS_MODEL_VALID and
+	        // IS_MODEL_IN_CDIMAGE do not agree on every build for streamed-in interior and DLC props, and
+	        // requiring both is what put thousands of loadable props into InvalidObjects.ini.
+	        if (!m.IsValid && !m.IsInCdImage)
 	        {
-		        if (!ObjectDatabase.InvalidHashes.Contains(hash))
-		        {
-			        ObjectDatabase.InvalidHashes.Add(hash);
-					ObjectDatabase.SaveInvalidHashes();
-		        }
+		        ObjectDatabase.MarkHashInvalid(hash);
 		        return null;
 	        }
 
@@ -41,6 +42,16 @@ namespace MapEditor
                 counter++;
                 _loadingButtons.Draw();
             }
+
+	        if (!m.IsLoaded)
+	        {
+		        // The streamer was busy or the model is genuinely unloadable. Either way this is not proof
+		        // that the model is bad, so report the failure without blacklisting it.
+		        m.MarkAsNoLongerNeeded();
+		        return null;
+	        }
+
+	        ObjectDatabase.MarkHashValid(hash);
             return m;
         }
     }
