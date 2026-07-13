@@ -1,5 +1,8 @@
+using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Windows.Forms;
 using GTA;
 using GTA.Math;
 using GTA.Native;
@@ -9,6 +12,8 @@ namespace MapEditor
 {
     public partial class MapEditor
     {
+        private static readonly Color MultiSelectionColor = Color.FromArgb(200, 20, 200, 20);
+
         private void ProcessFreelook(Entity hitEnt, float mouseX, float mouseY, float movementModifier, float modifier)
         {
             if (!_menuPool.AreAnyVisible || Game.LastInputMethod == InputMethod.GamePad)
@@ -31,7 +36,15 @@ namespace MapEditor
             _mainCamera.Position = newPos;
             Game.Player.Character.PositionNoOffset = _mainCamera.Position - dir * 8f;
 
-            if (_snappedProp != null)
+            PruneMultiSelection();
+            foreach (Entity selected in _multiSelection)
+                DrawEntityBox(selected, MultiSelectionColor);
+
+            if (_multiSelectionSnapped)
+            {
+                ProcessMultiSelectionMove(modifier);
+            }
+            else if (_snappedProp != null)
             {
                 if (!IsProp(_snappedProp))
                     _snappedProp.Position = VectorExtensions.RaycastEverything(new Vector2(0f, 0f), _mainCamera.Position, _mainCamera.Rotation, _snappedProp);
@@ -120,7 +133,11 @@ namespace MapEditor
 
                 if (Game.IsControlJustPressed(Control.Aim))
                 {
-                    if (hitEnt != null && PropStreamer.GetAllHandles().Contains(hitEnt.Handle))
+                    if (_multiSelection.Count > 0)
+                    {
+                        BeginMultiSelectionMove();
+                    }
+                    else if (hitEnt != null && PropStreamer.GetAllHandles().Contains(hitEnt.Handle))
                     {
                         _snappedProp = WrapEntity(hitEnt);
                         _changesMade++;
@@ -137,8 +154,16 @@ namespace MapEditor
                     }
                 }
 
-                if (Game.IsControlJustPressed(Control.Attack))
+                if (Game.IsControlJustPressed(Control.Attack) && IsMultiSelectKeyDown())
                 {
+                    if (hitEnt != null && PropStreamer.GetAllHandles().Contains(hitEnt.Handle))
+                        ToggleMultiSelection(hitEnt);
+                }
+                else if (Game.IsControlJustPressed(Control.Attack))
+                {
+                    // A plain click always starts a fresh selection.
+                    ClearMultiSelection();
+
                     if (hitEnt != null && PropStreamer.GetAllHandles().Contains(hitEnt.Handle))
                     {
                         _selectedProp = WrapEntity(hitEnt);
@@ -166,9 +191,13 @@ namespace MapEditor
 
                 if (Game.IsControlJustReleased(Control.LookBehind))
                 {
-                    if (hitEnt != null)
+                    if (_multiSelection.Count > 0)
                     {
-                        CopyEntity(hitEnt);
+                        CopyMultiSelection();
+                    }
+                    else if (hitEnt != null)
+                    {
+                        _snappedProp = CopyEntity(hitEnt);
                         _changesMade++;
                     }
                     else
@@ -188,7 +217,11 @@ namespace MapEditor
 
                 if (Game.IsControlJustPressed(Control.CreatorDelete))
                 {
-                    if (hitEnt != null && PropStreamer.GetAllHandles().Contains(hitEnt.Handle))
+                    if (_multiSelection.Count > 0)
+                    {
+                        DeleteMultiSelection();
+                    }
+                    else if (hitEnt != null && PropStreamer.GetAllHandles().Contains(hitEnt.Handle))
                     {
                         RemoveItemFromEntityMenu(hitEnt);
                         if (PropStreamer.Identifications.ContainsKey(hitEnt.Handle))
@@ -266,9 +299,9 @@ namespace MapEditor
         }
 
         /// <summary>
-        /// Duplicates the entity under the crosshair and snaps the copy to the cursor.
+        /// Duplicates an entity in place and returns the copy, or null if it could not be created.
         /// </summary>
-        private void CopyEntity(Entity hitEnt)
+        private Entity CopyEntity(Entity hitEnt)
         {
             if (PropStreamer.IsPickup(hitEnt.Handle))
             {
@@ -277,60 +310,250 @@ namespace MapEditor
                 var newPickup = PropStreamer.CreatePickup(new Model(oldPickup.PickupHash), oldPickup.Position,
                     oldRotation, oldPickup.Amount, oldPickup.Dynamic);
                 AddItemToEntityMenu(newPickup);
-                _snappedProp = Compat.Ent(newPickup.ObjectHandle);
-                return;
+                return Compat.Ent(newPickup.ObjectHandle);
             }
 
             if (IsProp(hitEnt))
             {
                 var isDoor = PropStreamer.Doors.Contains(hitEnt.Handle);
-                AddItemToEntityMenu(_snappedProp = PropStreamer.CreateProp(hitEnt.Model, hitEnt.Position, hitEnt.Rotation,
+                Entity newProp;
+                AddItemToEntityMenu(newProp = PropStreamer.CreateProp(hitEnt.Model, hitEnt.Position, hitEnt.Rotation,
                     (!PropStreamer.StaticProps.Contains(hitEnt.Handle) && !isDoor), q: Quaternion.GetEntityQuaternion(hitEnt),
                     force: true, drawDistance: _settings.DrawDistance));
-                if (isDoor && _snappedProp != null)
+                if (isDoor && newProp != null)
                 {
-                    _snappedProp.IsPositionFrozen = false;
-                    PropStreamer.Doors.Add(_snappedProp.Handle);
+                    newProp.IsPositionFrozen = false;
+                    PropStreamer.Doors.Add(newProp.Handle);
                 }
-                return;
+                return newProp;
             }
 
             if (IsVehicle(hitEnt))
             {
-                AddItemToEntityMenu(_snappedProp = PropStreamer.CreateVehicle(hitEnt.Model, hitEnt.Position, hitEnt.Rotation.Z,
+                Entity newVehicle;
+                AddItemToEntityMenu(newVehicle = PropStreamer.CreateVehicle(hitEnt.Model, hitEnt.Position, hitEnt.Rotation.Z,
                     !PropStreamer.StaticProps.Contains(hitEnt.Handle), drawDistance: _settings.DrawDistance));
-                return;
+                return newVehicle;
             }
 
             if (IsPed(hitEnt))
             {
-                AddItemToEntityMenu(_snappedProp = ((Ped)hitEnt).Clone(hitEnt.Rotation.Z));
-                if (_snappedProp == null) return;
+                Entity newPed;
+                AddItemToEntityMenu(newPed = ((Ped)hitEnt).Clone(hitEnt.Rotation.Z));
+                if (newPed == null) return null;
 
-                PropStreamer.Peds.Add(_snappedProp.Handle);
+                PropStreamer.Peds.Add(newPed.Handle);
 
                 if (_settings.DrawDistance != -1)
-                    _snappedProp.LodDistance = _settings.DrawDistance;
+                    newPed.LodDistance = _settings.DrawDistance;
 
                 if (PropStreamer.StaticProps.Contains(hitEnt.Handle))
                 {
-                    _snappedProp.IsPositionFrozen = true;
-                    PropStreamer.StaticProps.Add(_snappedProp.Handle);
+                    newPed.IsPositionFrozen = true;
+                    PropStreamer.StaticProps.Add(newPed.Handle);
                 }
 
-                if (!PropStreamer.ActiveScenarios.ContainsKey(_snappedProp.Handle))
-                    PropStreamer.ActiveScenarios.Add(_snappedProp.Handle, "None");
+                if (!PropStreamer.ActiveScenarios.ContainsKey(newPed.Handle))
+                    PropStreamer.ActiveScenarios.Add(newPed.Handle, "None");
 
                 if (PropStreamer.ActiveRelationships.ContainsKey(hitEnt.Handle))
-                    PropStreamer.ActiveRelationships.Add(_snappedProp.Handle, PropStreamer.ActiveRelationships[hitEnt.Handle]);
-                else if (!PropStreamer.ActiveRelationships.ContainsKey(_snappedProp.Handle))
-                    PropStreamer.ActiveRelationships.Add(_snappedProp.Handle, DefaultRelationship.ToString());
+                    PropStreamer.ActiveRelationships.Add(newPed.Handle, PropStreamer.ActiveRelationships[hitEnt.Handle]);
+                else if (!PropStreamer.ActiveRelationships.ContainsKey(newPed.Handle))
+                    PropStreamer.ActiveRelationships.Add(newPed.Handle, DefaultRelationship.ToString());
 
                 if (PropStreamer.ActiveWeapons.ContainsKey(hitEnt.Handle))
-                    PropStreamer.ActiveWeapons.Add(_snappedProp.Handle, PropStreamer.ActiveWeapons[hitEnt.Handle]);
-                else if (!PropStreamer.ActiveWeapons.ContainsKey(_snappedProp.Handle))
-                    PropStreamer.ActiveWeapons.Add(_snappedProp.Handle, WeaponHash.Unarmed);
+                    PropStreamer.ActiveWeapons.Add(newPed.Handle, PropStreamer.ActiveWeapons[hitEnt.Handle]);
+                else if (!PropStreamer.ActiveWeapons.ContainsKey(newPed.Handle))
+                    PropStreamer.ActiveWeapons.Add(newPed.Handle, WeaponHash.Unarmed);
+
+                return newPed;
             }
+
+            return null;
+        }
+
+        private static bool IsMultiSelectKeyDown()
+        {
+            return Game.IsKeyPressed(Keys.LControlKey);
+        }
+
+        /// <summary>
+        /// Adds the entity to the multi-selection, or drops it if it was already picked.
+        /// </summary>
+        private void ToggleMultiSelection(Entity ent)
+        {
+            int index = _multiSelection.FindIndex(e => e.Handle == ent.Handle);
+            if (index != -1)
+            {
+                _multiSelection.RemoveAt(index);
+                _multiSelectionOffsets.RemoveAt(index);
+                return;
+            }
+
+            _multiSelection.Add(ent);
+            _multiSelectionOffsets.Add(Vector3.Zero);
+        }
+
+        private void ClearMultiSelection()
+        {
+            if (_multiSelectionSnapped)
+                EndMultiSelectionMove();
+
+            _multiSelection.Clear();
+            _multiSelectionOffsets.Clear();
+        }
+
+        /// <summary>
+        /// Drops entities that were deleted or removed from the map behind our back, e.g. through the entity menu.
+        /// </summary>
+        private void PruneMultiSelection()
+        {
+            if (_multiSelection.Count == 0) return;
+
+            var handles = PropStreamer.GetAllHandles();
+            for (int i = _multiSelection.Count - 1; i >= 0; i--)
+            {
+                var ent = _multiSelection[i];
+                if (ent != null && ent.Exists() && handles.Contains(ent.Handle)) continue;
+
+                _multiSelection.RemoveAt(i);
+                _multiSelectionOffsets.RemoveAt(i);
+            }
+
+            if (_multiSelection.Count == 0)
+                _multiSelectionSnapped = false;
+        }
+
+        private Vector3 CrosshairPosition()
+        {
+            return VectorExtensions.RaycastEverything(new Vector2(0f, 0f), _mainCamera.Position, _mainCamera.Rotation, Game.Player.Character);
+        }
+
+        private void BeginMultiSelectionMove()
+        {
+            var anchor = CrosshairPosition();
+            for (int i = 0; i < _multiSelection.Count; i++)
+            {
+                var ent = _multiSelection[i];
+                _multiSelectionOffsets[i] = ent.Position - anchor;
+                // Without this the crosshair raycast lands on the props being dragged and the group creeps
+                // towards the camera instead of following the ground.
+                Function.Call(Hash.SET_ENTITY_COLLISION, ent.Handle, false, true);
+            }
+            _multiSelectionSnapped = true;
+        }
+
+        private void EndMultiSelectionMove()
+        {
+            foreach (Entity ent in _multiSelection)
+            {
+                if (ent == null || !ent.Exists()) continue;
+                RestoreCollision(ent);
+                SyncPickup(ent);
+            }
+            _multiSelectionSnapped = false;
+        }
+
+        private static void RestoreCollision(Entity ent)
+        {
+            Function.Call(Hash.SET_ENTITY_COLLISION, ent.Handle, true, true);
+        }
+
+        private void ProcessMultiSelectionMove(float modifier)
+        {
+            if (Game.IsControlPressed(Control.CursorScrollUp) || Game.IsControlPressed(Control.FrontendRb))
+                RotateMultiSelection(-modifier);
+
+            if (Game.IsControlPressed(Control.CursorScrollDown) || Game.IsControlPressed(Control.FrontendLb))
+                RotateMultiSelection(modifier);
+
+            var anchor = CrosshairPosition();
+            for (int i = 0; i < _multiSelection.Count; i++)
+                SetEntityPosition(_multiSelection[i], anchor + _multiSelectionOffsets[i]);
+
+            if (Game.IsControlJustPressed(Control.CreatorDelete))
+            {
+                DeleteMultiSelection();
+                return;
+            }
+
+            if (Game.IsControlJustPressed(Control.Attack))
+            {
+                EndMultiSelectionMove();
+                _changesMade++;
+            }
+
+            DrawButtons(_snappedButtons);
+        }
+
+        /// <summary>
+        /// Spins the whole group around the crosshair, both the entities and the offsets they hold it by.
+        /// </summary>
+        private void RotateMultiSelection(float angle)
+        {
+            var rad = (float)VectorExtensions.DegToRad(angle);
+            var cos = (float)Math.Cos(rad);
+            var sin = (float)Math.Sin(rad);
+
+            for (int i = 0; i < _multiSelection.Count; i++)
+            {
+                var offset = _multiSelectionOffsets[i];
+                _multiSelectionOffsets[i] = new Vector3(offset.X * cos - offset.Y * sin, offset.X * sin + offset.Y * cos, offset.Z);
+
+                var ent = _multiSelection[i];
+                ent.Rotation = ent.Rotation + new Vector3(0f, 0f, angle);
+                if (IsPed(ent))
+                    ent.Heading = ent.Rotation.Z;
+            }
+        }
+
+        private void DeleteMultiSelection()
+        {
+            foreach (Entity ent in _multiSelection)
+            {
+                if (ent == null || !ent.Exists()) continue;
+
+                RemoveItemFromEntityMenu(ent);
+                PropStreamer.Identifications.Remove(ent.Handle);
+                PropStreamer.ActiveScenarios.Remove(ent.Handle);
+                PropStreamer.ActiveRelationships.Remove(ent.Handle);
+                PropStreamer.ActiveWeapons.Remove(ent.Handle);
+
+                if (PropStreamer.IsPickup(ent.Handle))
+                    PropStreamer.RemovePickup(ent.Handle);
+                else
+                    PropStreamer.RemoveEntity(ent.Handle);
+            }
+
+            _multiSelection.Clear();
+            _multiSelectionOffsets.Clear();
+            _multiSelectionSnapped = false;
+            _changesMade++;
+        }
+
+        /// <summary>
+        /// Duplicates every selected entity and hands the copies to the cursor as the new selection.
+        /// </summary>
+        private void CopyMultiSelection()
+        {
+            var copies = new List<Entity>();
+            foreach (Entity ent in _multiSelection)
+            {
+                if (ent == null || !ent.Exists()) continue;
+                var copy = CopyEntity(ent);
+                if (copy != null) copies.Add(copy);
+            }
+
+            if (copies.Count == 0) return;
+
+            ClearMultiSelection();
+            foreach (Entity copy in copies)
+            {
+                _multiSelection.Add(copy);
+                _multiSelectionOffsets.Add(Vector3.Zero);
+            }
+            BeginMultiSelectionMove();
+            _changesMade++;
         }
 
         private void ProcessSelectedProp(float modifier)

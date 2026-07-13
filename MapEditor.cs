@@ -44,6 +44,15 @@ namespace MapEditor
         private Entity _snappedProp;
         private Entity _selectedProp;
 
+        /// <summary>
+        /// Entities picked with Ctrl + Attack. While <see cref="_multiSelectionSnapped"/> is set they follow the
+        /// crosshair as one rigid group, each keeping the offset stored at the same index in
+        /// <see cref="_multiSelectionOffsets"/>.
+        /// </summary>
+        private readonly List<Entity> _multiSelection = new List<Entity>();
+        private readonly List<Vector3> _multiSelectionOffsets = new List<Vector3>();
+        private bool _multiSelectionSnapped;
+
         private Marker _snappedMarker;
 	    private Marker _selectedMarker;
 
@@ -273,6 +282,7 @@ namespace MapEditor
 
         private void ToggleFreecam()
         {
+            ClearMultiSelection();
             IsInFreecam = !IsInFreecam;
             Game.Player.Character.IsPositionFrozen = IsInFreecam;
             Game.Player.Character.IsVisible = !IsInFreecam;
@@ -290,6 +300,7 @@ namespace MapEditor
 
         private void NewMap()
         {
+            ClearMultiSelection();
             JavascriptHook.StopAllScripts();
             PropStreamer.RemoveAll();
             PropStreamer.Markers.Clear();

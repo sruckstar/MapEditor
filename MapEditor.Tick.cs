@@ -35,6 +35,8 @@ namespace MapEditor
                 new InstructionalButton(Translation.Translate("Spawn Pickup"), Control.ThrowGrenade),
                 new InstructionalButton(Translation.Translate("Move Entity"), Control.Aim),
                 new InstructionalButton(Translation.Translate("Select Entity"), Control.Attack),
+                // Control.Duck is the LCTRL binding on keyboard, which is the key IsMultiSelectKeyDown() looks for.
+                new InstructionalButton(Translation.Translate("Add to Selection"), Control.Duck),
                 new InstructionalButton(Translation.Translate("Copy Entity"), Control.LookBehind),
                 new InstructionalButton(Translation.Translate("Delete Entity"), Control.CreatorDelete))
             {
@@ -155,6 +157,7 @@ namespace MapEditor
 
 			if (Game.IsControlJustPressed(Control.Phone) && !_isChoosingObject && !_menuPool.AreAnyVisible)
 			{
+				ClearMultiSelection();
 				_snappedProp = null;
 				_selectedProp = null;
 				_snappedMarker = null;
@@ -180,6 +183,7 @@ namespace MapEditor
 
             if (Game.IsControlJustPressed(Control.ThrowGrenade) && !_isChoosingObject && !_menuPool.AreAnyVisible)
             {
+                ClearMultiSelection();
                 _snappedProp = null;
                 _selectedProp = null;
                 _snappedMarker = null;
@@ -283,6 +287,7 @@ namespace MapEditor
                 RedrawObjectsMenu(type: _currentObjectType);
 
             _isChoosingObject = true;
+            ClearMultiSelection();
             _snappedProp = null;
             _selectedProp = null;
             CloseAllMenus();
