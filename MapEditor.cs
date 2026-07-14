@@ -26,6 +26,7 @@ namespace MapEditor
         private bool _isChoosingObject;
         private bool _searchResultsOn;
 
+        private readonly NativeMenu _categoriesMenu;
         private readonly NativeMenu _objectsMenu;
         private readonly NativeMenu _searchMenu;
         private readonly NativeMenu _mainMenu;
@@ -77,6 +78,24 @@ namespace MapEditor
 	    private const Relationship DefaultRelationship = Relationship.Companion;
 
 	    private ObjectTypes _currentObjectType;
+
+		/// <summary>
+		/// The category whose objects <see cref="_objectsMenu"/> is currently listing. Null while the
+		/// player is still on <see cref="_categoriesMenu"/> and has not picked one.
+		/// </summary>
+		private ObjectCategory _currentCategory;
+
+		/// <summary>
+		/// The DLC <see cref="_objectsMenu"/> is narrowed to, kept across categories so that the choice
+		/// sticks while browsing. Reset to <see cref="Dlc.AllName"/> for a category that has no such objects.
+		/// </summary>
+		private string _dlcFilter = Dlc.AllName;
+
+		/// <summary>
+		/// The row that sets <see cref="_dlcFilter"/>, always first in <see cref="_objectsMenu"/>. Null for
+		/// a list that offers no filter, i.e. vehicles and peds.
+		/// </summary>
+		private NativeListItem<string> _dlcFilterItem;
 
 	    private Settings _settings;
 
@@ -149,6 +168,10 @@ namespace MapEditor
 			ObjectDatabase.LoadFromFile("scripts\\PedList.ini", ref ObjectDatabase.PedDb);
             ObjectDatabase.LoadFromFile("scripts\\VehicleList.ini", ref ObjectDatabase.VehicleDb);
 
+			// Must follow the three lists above: the categories are a view over them, and loading one
+			// can fold a hand-added model name back into its database.
+			ObjectCategories.LoadAll();
+
 		    _crosshairPath = Path.GetFullPath("scripts\\MapEditor\\crosshair.png");
             _crosshairBluePath = Path.GetFullPath("scripts\\MapEditor\\crosshair_blue.png");
             _crosshairYellowPath = Path.GetFullPath("scripts\\MapEditor\\crosshair_yellow.png");
@@ -160,7 +183,15 @@ namespace MapEditor
             if (!File.Exists("scripts\\MapEditor\\crosshair_yellow.png"))
                 _crosshairYellowPath = Compat.WriteFileFromResources(Assembly.GetExecutingAssembly(), "MapEditor.crosshair_yellow.png", "scripts\\MapEditor\\crosshair_yellow.png");
 
-			RedrawObjectsMenu();
+            _categoriesMenu = new NativeMenu("Map Editor", "~b~" + Translation.Translate("PLACE OBJECT"));
+            _categoriesMenu.ItemActivated += OnCategorySelect;
+            _categoriesMenu.Closed += OnCategoriesMenuClosed;
+            _menuPool.Add(_categoriesMenu);
+            // Search spans every object, so it stays reachable without first entering a category.
+            _categoriesMenu.Buttons.Add(new InstructionalButton(Translation.Translate("Search"), Control.Jump));
+            RedrawCategoriesMenu();
+
+            // The object list starts empty and is filled from the category the player picks.
             _objectsMenu.ItemActivated += OnObjectSelect;
             _objectsMenu.SelectedIndexChanged += OnIndexChange;
             _objectsMenu.Closed += OnObjectsMenuClosed;
@@ -182,6 +213,9 @@ namespace MapEditor
 
             _mainMenu = new NativeMenu("Map Editor", "~b~" + Translation.Translate("MAIN MENU"));
             _mainMenu.Buttons.Visible = false;
+            // Opening the editor at all is the earliest warning that the object list is coming, and it leaves
+            // the several seconds the player spends in here to build its rows out of sight.
+            _mainMenu.Shown += (sender, args) => BeginObjectRowWarmup();
 
             var enterExitItem = new NativeItem(Translation.Translate("Enter/Exit Map Editor"));
             enterExitItem.Activated += (sender, args) => ToggleFreecam();
@@ -260,7 +294,11 @@ namespace MapEditor
             _programmaticMenuChange = false;
         }
 
-        private void OnObjectsMenuClosed(object sender, EventArgs e)
+        /// <summary>
+        /// Backing out of the category list is what actually leaves the object picker; the object list
+        /// below it only steps back up a level.
+        /// </summary>
+        private void OnCategoriesMenuClosed(object sender, EventArgs e)
         {
             if (_programmaticMenuChange || !_isChoosingObject) return;
             _isChoosingObject = false;
@@ -268,16 +306,35 @@ namespace MapEditor
             _previewProp = null;
         }
 
+        private void OnObjectsMenuClosed(object sender, EventArgs e)
+        {
+            if (_programmaticMenuChange || !_isChoosingObject) return;
+
+            // Back from a category's objects returns to the category list, keeping its selection.
+            _previewProp?.Delete();
+            _previewProp = null;
+            _currentCategory = null;
+            SetMenuVisible(_categoriesMenu, true);
+        }
+
         private void OnSearchMenuClosed(object sender, EventArgs e)
         {
             if (_programmaticMenuChange || !_isChoosingObject) return;
             if (!_searchResultsOn) return;
 
-            // Backing out of the search results returns to the full object list.
             _searchResultsOn = false;
+
+            // Search spans every object, so it can be opened straight from the category list. Back out
+            // to whichever level it was opened from.
+            if (_currentCategory == null)
+            {
+                SetMenuVisible(_categoriesMenu, true);
+                return;
+            }
+
             SetMenuVisible(_objectsMenu, true);
             OnIndexChange(_objectsMenu, new SelectedEventArgs(0, 0));
-            _objectsMenu.Name = "~b~" + Translation.Translate("PLACE") + " " + _currentObjectType.ToString().ToUpper();
+            _objectsMenu.Name = "~b~" + _currentCategory.Name.ToUpper();
         }
 
         private void ToggleFreecam()

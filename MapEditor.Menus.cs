@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -37,6 +38,83 @@ namespace MapEditor
             public EntityMenuKind Kind;
             public int Id;          // entity handle, marker id or pickup UID
             public string WorldId;  // MapObject.Id, for props removed from the world
+        }
+
+        /// <summary>A menu's worth of rows, each paired with the model hash its "Invalid" flag is read from.</summary>
+        private class RowGroup
+        {
+            public readonly List<NativeItem> Items = new List<NativeItem>();
+            public readonly List<int> Hashes = new List<int>();
+        }
+
+        /// <summary>The rows of one category, grouped the way the DLC filter reads them.</summary>
+        private class CategoryRows
+        {
+            /// <summary>
+            /// Rows per DLC name, always including <see cref="Dlc.AllName"/>, which holds the whole category.
+            /// A filter change is then a lookup, not a rebuild.
+            /// </summary>
+            public readonly Dictionary<string, RowGroup> ByDlc = new Dictionary<string, RowGroup>();
+
+            /// <summary>The filter's values in release order, or empty for a list that offers no filter.</summary>
+            public readonly List<string> Dlcs = new List<string>();
+        }
+
+        /// <summary>Every row built so far, per object type, keyed by model name. See <see cref="RowFor"/>.</summary>
+        private readonly Dictionary<ObjectTypes, Dictionary<string, NativeItem>> _rowsByModel =
+            new Dictionary<ObjectTypes, Dictionary<string, NativeItem>>();
+
+        /// <summary>The prepared rows of every category opened so far. See <see cref="RowsFor"/>.</summary>
+        private readonly Dictionary<ObjectCategory, CategoryRows> _rowsByCategory =
+            new Dictionary<ObjectCategory, CategoryRows>();
+
+        /// <summary>
+        /// The models whose rows are still to be built ahead of the player, and how far along that is. Null
+        /// once there is nothing left to build. See <see cref="WarmObjectRows"/>.
+        /// </summary>
+        private List<string> _rowWarmupQueue;
+        private int _rowWarmupIndex;
+        private bool _rowWarmupStarted;
+
+        /// <summary>
+        /// How long one tick may spend building rows ahead of the player. Building all 25,000 prop rows at
+        /// once would just move the stall to whenever that happened, so it is spread over frames instead: at
+        /// this budget the whole list is ready within a few seconds of opening the menu, well before the
+        /// player has finished picking a category, and no single frame is late.
+        /// </summary>
+        private const long RowWarmupBudgetMs = 2;
+
+        /// <summary>
+        /// Starts building the prop rows in the background, on the first sign the player is heading for the
+        /// object list. Does nothing once they are built, so it is safe to call on every menu opening.
+        /// </summary>
+        private void BeginObjectRowWarmup()
+        {
+            if (_rowWarmupStarted) return;
+            _rowWarmupStarted = true;
+
+            // A snapshot, so that a model folded into the database later cannot invalidate the walk. Rows the
+            // player got to first are already in _rowsByModel and are skipped when the queue reaches them.
+            _rowWarmupQueue = new List<string>(ObjectDatabase.MainDb.Keys);
+            _rowWarmupIndex = 0;
+        }
+
+        /// <summary>
+        /// Builds the next slice of the prop rows. Whatever is left when the player reaches a category is
+        /// built on the spot by <see cref="RowsFor"/>, so this only ever has to be fast, never complete.
+        /// </summary>
+        private void WarmObjectRows()
+        {
+            if (_rowWarmupQueue == null) return;
+
+            var clock = Stopwatch.StartNew();
+            while (_rowWarmupIndex < _rowWarmupQueue.Count)
+            {
+                RowFor(ObjectTypes.Prop, _rowWarmupQueue[_rowWarmupIndex++]);
+                if (clock.ElapsedMilliseconds >= RowWarmupBudgetMs) return;
+            }
+
+            _rowWarmupQueue = null;
         }
 
         private void BuildSettingsMenu()
@@ -206,7 +284,7 @@ namespace MapEditor
                 _settings.OmitInvalidObjects = objectValidationItem.Checked;
                 ObjectDatabase.TrackInvalidObjects = objectValidationItem.Checked;
                 SaveSettings();
-                RedrawObjectsMenu(_currentObjectType);
+                RedrawObjectsMenu(_currentCategory, _currentObjectType);
             };
 
             var resetInvalid = new NativeItem(Translation.Translate("Reset Invalid Objects"), Translation.Translate(
@@ -214,7 +292,23 @@ namespace MapEditor
             resetInvalid.Activated += (men, item) =>
             {
                 ObjectDatabase.ClearInvalidHashes();
-                RedrawObjectsMenu(_currentObjectType);
+                RedrawObjectsMenu(_currentCategory, _currentObjectType);
+            };
+
+            var regenCategories = new NativeItem(Translation.Translate("Rebuild Vehicle & Ped Categories"), Translation.Translate(
+                "Rewrites the generated vehicle and ped category files from scratch, discarding any edits made to them." +
+                " Prop categories are not touched."));
+            regenCategories.Activated += (men, item) =>
+            {
+                ObjectCategories.Regenerate();
+                // The categories are rebuilt from scratch, so the rows grouped under the old ones are stale.
+                // The rows themselves are keyed by model and outlive this.
+                _rowsByCategory.Clear();
+                _currentCategory = null;
+                _dlcFilterItem = null;
+                _objectsMenu.Clear();
+                RedrawCategoriesMenu(_currentObjectType);
+                Compat.Notify("~b~~h~Map Editor~h~~w~~n~" + Translation.Translate("Categories rebuilt."));
             };
 
             var validate = new NativeItem(Translation.Translate("Validate Object Database"), Translation.Translate(
@@ -264,6 +358,7 @@ namespace MapEditor
             _settingsMenu.Add(scriptItem);
             _settingsMenu.Add(objectValidationItem);
             _settingsMenu.Add(resetInvalid);
+            _settingsMenu.Add(regenCategories);
             _settingsMenu.Add(validate);
             _settingsMenu.Add(resetGrps);
             _settingsMenu.SelectedIndex = 0;
@@ -291,6 +386,9 @@ namespace MapEditor
 
             int index = e.Index;
             if (index < 0 || index >= sender.Items.Count) return;
+
+            // The DLC filter shares the object list, and there is no model behind it to preview.
+            if (ReferenceEquals(sender.Items[index], _dlcFilterItem)) return;
 
             int requestedHash;
             var title = sender.Items[index].Title;
@@ -355,6 +453,9 @@ namespace MapEditor
         {
             var menu = (NativeMenu) sender;
 
+            // Activating the DLC filter must not try to place it as if it were a model.
+            if (ReferenceEquals(e.Item, _dlcFilterItem)) return;
+
             if (PropStreamer.EntityCount == 0)
                 _lastAutosave = DateTime.Now;
 
@@ -398,31 +499,204 @@ namespace MapEditor
             _changesMade++;
         }
 
-        private void RedrawObjectsMenu(ObjectTypes type = ObjectTypes.Prop)
+        /// <summary>
+        /// Lists the categories available for <paramref name="type"/>. Picking one fills
+        /// <see cref="_objectsMenu"/> via <see cref="OnCategorySelect"/>.
+        /// </summary>
+        private void RedrawCategoriesMenu(ObjectTypes type = ObjectTypes.Prop)
         {
-            _objectsMenu.Clear();
-            switch (type)
+            var items = ObjectCategories.For(type)
+                .Select(category => new NativeItem(category.Name)
+                {
+                    AltTitle = category.Objects.Count.ToString(CultureInfo.InvariantCulture),
+                })
+                .ToList();
+
+            _categoriesMenu.Name = "~b~" + Translation.Translate("PLACE") + " " + type.ToString().ToUpper();
+            SetMenuItems(_categoriesMenu, null, items, 0);
+        }
+
+        private void OnCategorySelect(object sender, ItemActivatedArgs e)
+        {
+            var categories = ObjectCategories.For(_currentObjectType);
+            int index = _categoriesMenu.Items.IndexOf(e.Item);
+            if (index < 0 || index >= categories.Count) return;
+
+            _currentCategory = categories[index];
+            RedrawObjectsMenu(_currentCategory, _currentObjectType);
+            _objectsMenu.Name = "~b~" + _currentCategory.Name.ToUpper();
+
+            SetMenuVisible(_categoriesMenu, false);
+            SetMenuVisible(_objectsMenu, true);
+            OnIndexChange(_objectsMenu, new SelectedEventArgs(_objectsMenu.SelectedIndex, 0));
+        }
+
+        /// <summary>
+        /// Hands a menu its rows in one pass, laying it out exactly once.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="NativeMenu.Add(NativeItem)"/> lays the whole menu out again on every call, and that
+        /// layout measures each on-screen row's text through game natives. Filling a menu a row at a time
+        /// therefore costs one layout per row: the prop list runs to 25,000 of them and is refilled from
+        /// scratch whenever the DLC filter changes, which is what stalled the game for seconds. LemonUI
+        /// exposes the backing list, so the rows can be dropped in without a layout each and the whole menu
+        /// laid out once, by the <see cref="NativeMenu.SelectedIndex"/> setter at the end.
+        /// </remarks>
+        private static void SetMenuItems(NativeMenu menu, NativeItem header, List<NativeItem> items, int selectedIndex)
+        {
+            menu.Clear();
+
+            if (header != null)
+                menu.Items.Add(header);
+            if (items != null)
+                menu.Items.AddRange(items);
+
+            if (menu.Items.Count == 0) return;
+            menu.SelectedIndex = ClampIndex(selectedIndex, menu.Items.Count);
+        }
+
+        /// <summary>
+        /// The menu row standing for one model, built once and kept. Every category that lists the model
+        /// shares the row: <see cref="_objectsMenu"/> only ever shows one category at a time, so "All" and
+        /// the model's own category can hand out the same instance. Rows are worth keeping because building
+        /// one is not free either — <see cref="NativeItem"/>'s constructor resolves the screen size through
+        /// the game, so the 25,000 props cost 25,000 trips into it.
+        /// </summary>
+        private NativeItem RowFor(ObjectTypes type, string model)
+        {
+            Dictionary<string, NativeItem> rows;
+            if (!_rowsByModel.TryGetValue(type, out rows))
+                _rowsByModel[type] = rows = new Dictionary<string, NativeItem>();
+
+            NativeItem row;
+            if (!rows.TryGetValue(model, out row))
+                rows[model] = row = new NativeItem(model);
+            return row;
+        }
+
+        /// <summary>
+        /// Re-reads the blacklist onto a prop's row. Rows outlive it — browsing a model that will not load
+        /// blacklists it, "Reset Invalid Objects" clears it again — so the flag cannot be baked in at build
+        /// time. Only written when it actually changes: the setter lays the row out, which costs a text
+        /// measurement, and the overwhelming majority of rows are not flagged and never change.
+        /// </summary>
+        private static void RefreshInvalidFlag(NativeItem row, int hash)
+        {
+            var flag = ObjectDatabase.TrackInvalidObjects && ObjectDatabase.InvalidHashes.Contains(hash)
+                ? "~r~Invalid"
+                : string.Empty;
+
+            if (row.AltTitle != flag)
+                row.AltTitle = flag;
+        }
+
+        /// <summary>
+        /// The rows of <paramref name="category"/>, grouped the way the DLC filter reads them, built on the
+        /// first visit and kept. Only prop model names carry a pack prefix; the vehicle and ped lists are
+        /// keyed by ScriptHookVDotNet enum names ("Deveste", "Hooker01SFY"), which say nothing about the DLC
+        /// that shipped them, so they are left ungrouped and get no filter.
+        /// </summary>
+        private CategoryRows RowsFor(ObjectCategory category, ObjectTypes type)
+        {
+            CategoryRows cached;
+            if (_rowsByCategory.TryGetValue(category, out cached)) return cached;
+
+            var rows = new CategoryRows();
+            var all = new RowGroup();
+            rows.ByDlc[Dlc.AllName] = all;
+
+            foreach (var pair in category.Objects)
             {
-                case ObjectTypes.Prop:
-                    foreach (var u in ObjectDatabase.MainDb)
-                    {
-                        var object1 = new NativeItem(u.Key);
-                        if (ObjectDatabase.TrackInvalidObjects && ObjectDatabase.InvalidHashes.Contains(u.Value))
-                            object1.AltTitle = "~r~Invalid";
-                        _objectsMenu.Add(object1);
-                    }
-                    break;
-                case ObjectTypes.Vehicle:
-                    foreach (var u in ObjectDatabase.VehicleDb)
-                        _objectsMenu.Add(new NativeItem(u.Key));
-                    break;
-                case ObjectTypes.Ped:
-                    foreach (var u in ObjectDatabase.PedDb)
-                        _objectsMenu.Add(new NativeItem(u.Key));
-                    break;
+                var row = RowFor(type, pair.Key);
+                all.Items.Add(row);
+                all.Hashes.Add(pair.Value);
+
+                if (type != ObjectTypes.Prop) continue;
+
+                var dlc = Dlc.NameFor(pair.Key);
+                RowGroup group;
+                if (!rows.ByDlc.TryGetValue(dlc, out group))
+                    rows.ByDlc[dlc] = group = new RowGroup();
+                group.Items.Add(row);
+                group.Hashes.Add(pair.Value);
             }
-            if (_objectsMenu.Items.Count > 0)
-                _objectsMenu.SelectedIndex = 0;
+
+            if (type == ObjectTypes.Prop)
+            {
+                var present = Dlc.Present(category.Objects.Keys);
+                // A single value is always "All DLC" on its own: nothing to filter by.
+                if (present.Count > 1)
+                    rows.Dlcs.AddRange(present);
+            }
+
+            _rowsByCategory[category] = rows;
+            return rows;
+        }
+
+        /// <summary>
+        /// Builds the object list for a category, headed by the DLC filter.
+        /// </summary>
+        private void RedrawObjectsMenu(ObjectCategory category, ObjectTypes type = ObjectTypes.Prop)
+        {
+            _dlcFilterItem = null;
+
+            if (category == null)
+            {
+                _objectsMenu.Clear();
+                return;
+            }
+
+            var rows = RowsFor(category, type);
+
+            if (rows.Dlcs.Count > 0)
+            {
+                if (!rows.Dlcs.Contains(_dlcFilter))
+                    _dlcFilter = Dlc.AllName;
+
+                _dlcFilterItem = new NativeListItem<string>(Translation.Translate("DLC"), rows.Dlcs.ToArray())
+                {
+                    SelectedIndex = rows.Dlcs.IndexOf(_dlcFilter),
+                };
+                _dlcFilterItem.ItemChanged += (sender, e) =>
+                {
+                    _dlcFilter = e.Object;
+                    FillObjectsMenu(rows, type, false);
+                };
+            }
+
+            FillObjectsMenu(rows, type, true);
+        }
+
+        /// <summary>
+        /// Lists the rows the DLC filter lets through, under the filter row itself. The filter item is
+        /// re-added rather than rebuilt: this also runs from that item's own ItemChanged, so the instance
+        /// the menu is part-way through handling has to survive the refill.
+        /// </summary>
+        private void FillObjectsMenu(CategoryRows rows, ObjectTypes type, bool selectFirstObject)
+        {
+            // Picking the filter's group is the whole cost of a filter change now: the rows behind it were
+            // built and sorted into it when the category was first opened.
+            RowGroup group;
+            if (_dlcFilterItem == null || !rows.ByDlc.TryGetValue(_dlcFilter, out group))
+                group = rows.ByDlc[Dlc.AllName];
+
+            // Only props are validated against the game, so only they can be flagged.
+            if (type == ObjectTypes.Prop)
+            {
+                for (int i = 0; i < group.Items.Count; i++)
+                    RefreshInvalidFlag(group.Items[i], group.Hashes[i]);
+            }
+
+            if (_dlcFilterItem != null)
+            {
+                _dlcFilterItem.Description = string.Format(CultureInfo.InvariantCulture, "{0} ({1})",
+                    Translation.Translate("Show only the objects one DLC added."), group.Items.Count);
+            }
+
+            // Opening a category lands on its first model, so that it previews something right away; a
+            // change of filter keeps the cursor where the player left it, on the filter row.
+            var selected = selectFirstObject && _dlcFilterItem != null && group.Items.Count > 0 ? 1 : 0;
+            SetMenuItems(_objectsMenu, _dlcFilterItem, group.Items, selected);
         }
 
         private bool ApplySearchQuery(string searchQuery, string modelName)
@@ -443,32 +717,35 @@ namespace MapEditor
             return modelName.ToLower().Contains(q);
         }
 
+        /// <summary>
+        /// Lists every model matching the query. A loose query matches thousands of them, so this fills the
+        /// menu the same way a category does: shared rows, laid out in one pass. See <see cref="SetMenuItems"/>.
+        /// </summary>
         private void RedrawSearchMenu(string searchQuery, ObjectTypes type = ObjectTypes.Prop)
         {
-            _searchMenu.Clear();
+            var results = new List<NativeItem>();
 
             switch (type)
             {
                 case ObjectTypes.Prop:
                     foreach (var u in ObjectDatabase.MainDb.Where(pair => ApplySearchQuery(searchQuery, pair.Key)))
                     {
-                        var object1 = new NativeItem(u.Key);
-                        if (ObjectDatabase.TrackInvalidObjects && ObjectDatabase.InvalidHashes.Contains(u.Value))
-                            object1.AltTitle = "~r~Invalid";
-                        _searchMenu.Add(object1);
+                        var row = RowFor(type, u.Key);
+                        RefreshInvalidFlag(row, u.Value);
+                        results.Add(row);
                     }
                     break;
                 case ObjectTypes.Vehicle:
                     foreach (var u in ObjectDatabase.VehicleDb.Where(pair => ApplySearchQuery(searchQuery, pair.Key)))
-                        _searchMenu.Add(new NativeItem(u.Key));
+                        results.Add(RowFor(type, u.Key));
                     break;
                 case ObjectTypes.Ped:
                     foreach (var u in ObjectDatabase.PedDb.Where(pair => ApplySearchQuery(searchQuery, pair.Key)))
-                        _searchMenu.Add(new NativeItem(u.Key));
+                        results.Add(RowFor(type, u.Key));
                     break;
             }
-            if (_searchMenu.Items.Count > 0)
-                _searchMenu.SelectedIndex = 0;
+
+            SetMenuItems(_searchMenu, null, results, 0);
         }
 
         private string GetSafeShortReverseString(string input, int limit)

@@ -85,6 +85,7 @@ namespace MapEditor
 			}
 			_menuPool.Process();
 			PropStreamer.Tick();
+			WarmObjectRows();
 
 			if (PropStreamer.EntityCount > 0 || PropStreamer.RemovedObjects.Count > 0 || PropStreamer.Markers.Count > 0 || PropStreamer.Pickups.Count > 0)
 			{
@@ -283,8 +284,16 @@ namespace MapEditor
         {
             var oldType = _currentObjectType;
             _currentObjectType = type;
-            if (oldType != _currentObjectType)
-                RedrawObjectsMenu(type: _currentObjectType);
+            bool sameType = oldType == _currentObjectType;
+
+            if (!sameType)
+            {
+                // Categories are per-type, so switching type invalidates both the list and the choice.
+                RedrawCategoriesMenu(_currentObjectType);
+                _currentCategory = null;
+                _dlcFilterItem = null;
+                _objectsMenu.Clear();
+            }
 
             _isChoosingObject = true;
             ClearMultiSelection();
@@ -292,18 +301,22 @@ namespace MapEditor
             _selectedProp = null;
             CloseAllMenus();
 
-            if (_quitWithSearchVisible && oldType == _currentObjectType)
+            if (_quitWithSearchVisible && sameType)
             {
                 SetMenuVisible(_searchMenu, true);
                 OnIndexChange(_searchMenu, new SelectedEventArgs(_searchMenu.SelectedIndex, 0));
             }
-            else
+            else if (_currentCategory != null && sameType)
             {
+                // Placing several objects from one category is the common case, so drop straight back
+                // into it instead of making the player pick it again every time.
                 SetMenuVisible(_objectsMenu, true);
                 OnIndexChange(_objectsMenu, new SelectedEventArgs(_objectsMenu.SelectedIndex, 0));
             }
-
-            _objectsMenu.Name = "~b~" + Translation.Translate("PLACE") + " " + _currentObjectType.ToString().ToUpper();
+            else
+            {
+                SetMenuVisible(_categoriesMenu, true);
+            }
         }
 
         private void ProcessObjectPreview()
@@ -331,16 +344,25 @@ namespace MapEditor
             if (Game.IsControlPressed(Control.MoveUpOnly))
                 _objectPreviewCamera.Position += new Vector3(0f, 0.5f, 0f);
 
-            if (Game.IsControlJustPressed(Control.PhoneLeft))
+            // LemonUI scrolls a list item's value with these same two controls, so paging has to stand
+            // down while the cursor sits on the DLC filter, or one press would do both.
+            bool onDlcFilter = _dlcFilterItem != null && _objectsMenu.SelectedIndex == 0;
+
+            // Paging stops at the first model rather than at the filter above it, so that it always lands
+            // on something to preview.
+            int firstObject = _dlcFilterItem != null ? 1 : 0;
+
+            // Paging by 100 only makes sense on the object list; the category list is short.
+            if (_objectsMenu.Visible && !onDlcFilter && Game.IsControlJustPressed(Control.PhoneLeft))
             {
-                if (_objectsMenu.SelectedIndex <= 100)
-                    _objectsMenu.SelectedIndex = 0;
+                if (_objectsMenu.SelectedIndex - 100 <= firstObject)
+                    _objectsMenu.SelectedIndex = firstObject;
                 else
                     _objectsMenu.SelectedIndex -= 100;
                 OnIndexChange(_objectsMenu, new SelectedEventArgs(_objectsMenu.SelectedIndex, 0));
             }
 
-            if (Game.IsControlJustPressed(Control.PhoneRight))
+            if (_objectsMenu.Visible && !onDlcFilter && Game.IsControlJustPressed(Control.PhoneRight))
             {
                 if (_objectsMenu.SelectedIndex >= _objectsMenu.Items.Count - 101)
                     _objectsMenu.SelectedIndex = _objectsMenu.Items.Count - 1;
@@ -358,6 +380,7 @@ namespace MapEditor
                 if (query[0] == ' ')
                     query = query.Remove(0, 1);
                 SetMenuVisible(_objectsMenu, false);
+                SetMenuVisible(_categoriesMenu, false);
                 RedrawSearchMenu(query, _currentObjectType);
                 if (_searchMenu.Items.Count != 0)
                     OnIndexChange(_searchMenu, new SelectedEventArgs(0, 0));

@@ -45,6 +45,10 @@
 
   <ItemGroup>
     <None Include="ObjectList.ini" />
+    <!-- Copied to scripts\MapEditor\Categories\ alongside ObjectList.ini; read by ObjectCategories.cs. -->
+    <None Include="Categories\**\*.txt" />
+    <None Include="Categories\README.md" />
+    <None Include="tools\generate_categories.py" />
   </ItemGroup>
 
 </Project>
