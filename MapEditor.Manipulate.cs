@@ -374,7 +374,11 @@ namespace MapEditor
 
         private static bool IsMultiSelectKeyDown()
         {
-            return Game.IsKeyPressed(Keys.LControlKey);
+            // WinForms reports both Ctrl keys as ControlKey, which is what the script hook tracks;
+            // the L/R variants only ever show up through raw input.
+            return Game.IsKeyPressed(Keys.ControlKey) ||
+                   Game.IsKeyPressed(Keys.LControlKey) ||
+                   Game.IsKeyPressed(Keys.RControlKey);
         }
 
         /// <summary>
