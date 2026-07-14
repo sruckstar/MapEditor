@@ -14,6 +14,12 @@ namespace MapEditor.API
 		internal static ModListener CurrentMod;
 	    internal static NativeMenu ModMenu;
 
+		/// <summary>Whether any mod has subscribed. The menu is worthless until one has, so the row that opens it stays greyed out.</summary>
+		internal static bool HasMods
+		{
+			get { return Mods.Count > 0; }
+		}
+
 		internal static void InitMenu()
 		{
 		    ModMenu = new NativeMenu("Map Editor", "~b~" + Translation.Translate("EXTERNAL MODS"));

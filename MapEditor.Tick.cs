@@ -9,6 +9,7 @@ using LemonUI.Elements;
 using LemonUI.Menus;
 using LemonUI.Scaleform;
 using LemonUI.Tools;
+using MapEditor.API;
 using Control = GTA.Control;
 using Font = GTA.UI.Font;
 
@@ -141,6 +142,17 @@ namespace MapEditor
 				_unloadAutoloadedItem.AltTitle = "";
 			}
 
+			if (ModManager.HasMods)
+			{
+				_externalModItem.Enabled = true;
+				_externalModItem.Description = Translation.Translate("Hand the map over to another mod instead of saving it to a file.");
+			}
+			else
+			{
+				_externalModItem.Enabled = false;
+				_externalModItem.Description = Translation.Translate("No external mods are connected to Map Editor.");
+			}
+
 			if (Game.IsControlPressed(Control.LookBehind) && Game.IsControlJustPressed(Control.FrontendLb) && !_menuPool.AreAnyVisible && _settings.Gamepad)
 			{
 				_mainMenu.Visible = !_mainMenu.Visible;
@@ -246,8 +258,19 @@ namespace MapEditor
 
             if (_isChoosingObject)
             {
-                ProcessObjectPreview();
-                return;
+                // Every way out of the picker runs from a menu's Closed handler, so a picker with no menu on
+                // screen is a state nothing can take the player out of: the freecam controls are swallowed by
+                // the return below and BeginChoosingObject refuses to reopen while this is set. Whatever hid
+                // the menu, hand the player back their camera rather than stranding them in it.
+                if (!_categoriesMenu.Visible && !_objectsMenu.Visible && !_searchMenu.Visible)
+                {
+                    LeaveObjectPicker();
+                }
+                else
+                {
+                    ProcessObjectPreview();
+                    return;
+                }
             }
 
             World.RenderingCamera = _mainCamera;
@@ -447,7 +470,6 @@ namespace MapEditor
                     OnIndexChange(_searchMenu, new SelectedEventArgs(0, 0));
                 _searchMenu.Name = "~b~" + Translation.Translate("SEARCH RESULTS FOR") + " \"" + query.ToUpper() + "\"";
                 SetMenuVisible(_searchMenu, true);
-                _searchResultsOn = true;
             }
         }
 

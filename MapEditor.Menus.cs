@@ -504,7 +504,6 @@ namespace MapEditor
             }
 
             _isChoosingObject = false;
-            _searchResultsOn = false;
             SetMenuVisible(_objectsMenu, false);
             SetMenuVisible(_searchMenu, false);
             _previewProp?.Delete();

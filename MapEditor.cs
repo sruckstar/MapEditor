@@ -24,7 +24,6 @@ namespace MapEditor
     {
         public static bool IsInFreecam;
         private bool _isChoosingObject;
-        private bool _searchResultsOn;
 
         private readonly NativeMenu _categoriesMenu;
         private readonly NativeMenu _objectsMenu;
@@ -47,6 +46,10 @@ namespace MapEditor
 
 		/// <summary>Greyed out until a map has actually been autoloaded, since there is nothing else to unload.</summary>
 		private readonly NativeItem _unloadAutoloadedItem;
+
+		/// <summary>Greyed out until an external mod subscribes through <see cref="ModManager.SuscribeMod"/>: the
+		/// submenu it opens is a list of those mods, and mods can subscribe at any time after startup.</summary>
+		private readonly NativeItem _externalModItem;
 
         private readonly ObjectPool _menuPool = new ObjectPool();
 
@@ -140,6 +143,7 @@ namespace MapEditor
         {
             Tick += OnTick;
             KeyDown += OnKeyDown;
+            Aborted += OnAborted;
 
             if (!Directory.Exists("scripts\\MapEditor"))
                 Directory.CreateDirectory("scripts\\MapEditor");
@@ -296,8 +300,8 @@ namespace MapEditor
 	        var settingsItem = _mainMenu.AddSubMenu(_settingsMenu);
 	        settingsItem.Title = Translation.Translate("Settings");
 
-	        var externalModItem = _mainMenu.AddSubMenu(ModManager.ModMenu);
-	        externalModItem.Title = Translation.Translate("Create Map for External Mod");
+	        _externalModItem = _mainMenu.AddSubMenu(ModManager.ModMenu);
+	        _externalModItem.Title = Translation.Translate("Create Map for External Mod");
 
 			_mainMenu.SelectedIndex = 0;
 			_menuPool.Add(ModManager.ModMenu);
@@ -308,16 +312,42 @@ namespace MapEditor
         /// </summary>
         private void SetMenuVisible(NativeMenu menu, bool visible)
         {
+            // Showing a menu raises its SelectedIndexChanged, which loads a preview model: anything that
+            // throws in there must not leave the flag set, or every Closed handler below is dead from then on.
             _programmaticMenuChange = true;
-            menu.Visible = visible;
-            _programmaticMenuChange = false;
+            try
+            {
+                menu.Visible = visible;
+            }
+            finally
+            {
+                _programmaticMenuChange = false;
+            }
         }
 
         private void CloseAllMenus()
         {
             _programmaticMenuChange = true;
-            _menuPool.HideAll();
-            _programmaticMenuChange = false;
+            try
+            {
+                _menuPool.HideAll();
+            }
+            finally
+            {
+                _programmaticMenuChange = false;
+            }
+        }
+
+        /// <summary>
+        /// Leaves the object picker and takes the preview prop with it. The picker owns the camera and
+        /// swallows the freecam controls for as long as <see cref="_isChoosingObject"/> is set, so every path
+        /// that takes the last picker menu off the screen has to come through here.
+        /// </summary>
+        private void LeaveObjectPicker()
+        {
+            _isChoosingObject = false;
+            _previewProp?.Delete();
+            _previewProp = null;
         }
 
         /// <summary>
@@ -327,9 +357,7 @@ namespace MapEditor
         private void OnCategoriesMenuClosed(object sender, EventArgs e)
         {
             if (_programmaticMenuChange || !_isChoosingObject) return;
-            _isChoosingObject = false;
-            _previewProp?.Delete();
-            _previewProp = null;
+            LeaveObjectPicker();
         }
 
         private void OnObjectsMenuClosed(object sender, EventArgs e)
@@ -346,9 +374,6 @@ namespace MapEditor
         private void OnSearchMenuClosed(object sender, EventArgs e)
         {
             if (_programmaticMenuChange || !_isChoosingObject) return;
-            if (!_searchResultsOn) return;
-
-            _searchResultsOn = false;
 
             // Search spans every object, so it can be opened straight from the category list. Back out
             // to whichever level it was opened from.
@@ -376,6 +401,34 @@ namespace MapEditor
             SetMenuVisible(_objectsMenu, true);
             OnIndexChange(_objectsMenu, new SelectedEventArgs(0, 0));
             _objectsMenu.Name = "~b~" + _currentCategory.Name.ToUpper();
+        }
+
+        /// <summary>
+        /// Nothing else will run after this: the script is being reloaded, or it has been aborted over an
+        /// unhandled exception. The freecam state it was holding is all game-side and outlives it — a camera
+        /// still rendering, a frozen invisible player, a preview prop hanging in the air over the preview
+        /// spot — and the player has no way left to undo any of it, so it is given back here.
+        ///
+        /// The placed map is deliberately left standing: it is the player's work, and a reload is not a
+        /// reason to throw it away.
+        /// </summary>
+        private void OnAborted(object sender, EventArgs e)
+        {
+            _previewProp?.Delete();
+            _previewProp = null;
+
+            if (!IsInFreecam) return;
+
+            IsInFreecam = false;
+            World.RenderingCamera = null;
+            World.DestroyAllCameras();
+            _mainCamera = null;
+            _objectPreviewCamera = null;
+
+            var player = Game.Player.Character;
+            player.IsPositionFrozen = false;
+            player.IsVisible = true;
+            player.Position -= new Vector3(0f, 0f, player.HeightAboveGround - 1f);
         }
 
         private void ToggleFreecam()
