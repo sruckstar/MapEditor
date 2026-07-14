@@ -174,6 +174,7 @@ namespace MapEditor
 			_objectInfoMenu.Buttons.Visible = false;
 			_menuPool.Add(_objectInfoMenu);
 
+			BuildPedComponentsMenu();
 			BuildStackingMenu();
 			BuildLoopingMenu();
 
@@ -800,6 +801,11 @@ namespace MapEditor
 						    AddItemToEntityMenu(tmpVeh = PropStreamer.CreateVehicle(ObjectPreview.LoadObject(o.Hash), o.Position, o.Rotation.Z, o.Dynamic, drawDistance: _settings.DrawDistance));
 				            tmpVeh.Mods.PrimaryColor = (VehicleColor) o.PrimaryColor;
                             tmpVeh.Mods.SecondaryColor = (VehicleColor)o.SecondaryColor;
+				            if (o.Livery >= 0)
+				            {
+				                Function.Call(Hash.SET_VEHICLE_MOD_KIT, tmpVeh.Handle, 0);
+				                tmpVeh.Mods.Livery = o.Livery;
+				            }
                             if (o.Id != null && !PropStreamer.Identifications.ContainsKey(tmpVeh.Handle))
 				            {
 				                PropStreamer.Identifications.Add(tmpVeh.Handle, o.Id);
@@ -814,6 +820,7 @@ namespace MapEditor
 					    case ObjectTypes.Ped:
 						    Ped pedid;
 						    AddItemToEntityMenu(pedid = PropStreamer.CreatePed(ObjectPreview.LoadObject(o.Hash), o.Position - new Vector3(0f, 0f, 1f), o.Rotation.Z, o.Dynamic, drawDistance: _settings.DrawDistance));
+						    PedComponents.Apply(pedid, o.Drawables, o.Textures);
 							if((o.Action == null || o.Action == "None") && !PropStreamer.ActiveScenarios.ContainsKey(pedid.Handle))
 								PropStreamer.ActiveScenarios.Add(pedid.Handle, "None");
 							else if (o.Action != null && o.Action != "None" && !PropStreamer.ActiveScenarios.ContainsKey(pedid.Handle))

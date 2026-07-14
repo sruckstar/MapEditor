@@ -274,6 +274,11 @@ namespace MapEditor
 									o.Hash, Vec(o.Position), Float(o.Rotation.Z));
 								vehicles.AppendFormat("        if (vehicle != null) {{ vehicle.LodDistance = LodDistance; vehicle.Mods.PrimaryColor = (VehicleColor){0}; vehicle.Mods.SecondaryColor = (VehicleColor){1}; vehicle.IsSirenActive = {2}; vehicle.IsPositionFrozen = {3}; _entities.Add(vehicle); }}\r\n",
 									o.PrimaryColor, o.SecondaryColor, Bool(o.SirensActive), Bool(!o.Dynamic));
+
+								// The game reports no liveries on a vehicle with no mod kit installed, so one goes on first.
+								if (o.Livery >= 0)
+									vehicles.AppendFormat("        if (vehicle != null) {{ Function.Call(Hash.SET_VEHICLE_MOD_KIT, vehicle, 0); vehicle.Mods.Livery = {0}; }}\r\n",
+										o.Livery);
 								break;
 							}
 							case ObjectTypes.Ped:
@@ -288,6 +293,16 @@ namespace MapEditor
 
 								if (o.Weapon.HasValue && o.Weapon.Value != WeaponHash.Unarmed)
 									peds.AppendFormat("            ped.Weapons.Give({0}, 999, true, true);\r\n", WeaponLiteral(o.Weapon.Value));
+
+								if (o.Drawables != null)
+								{
+									for (int slot = 0; slot < o.Drawables.Length; slot++)
+									{
+										int texture = o.Textures != null && slot < o.Textures.Length ? o.Textures[slot] : 0;
+										peds.AppendFormat("            Function.Call(Hash.SET_PED_COMPONENT_VARIATION, ped, {0}, {1}, {2}, 0);\r\n",
+											slot, o.Drawables[slot], texture);
+									}
+								}
 
 								foreach (var line in ScenarioLines(o.Action))
 									peds.AppendFormat("            {0}\r\n", line);

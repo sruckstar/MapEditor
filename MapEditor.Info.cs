@@ -89,6 +89,14 @@ namespace MapEditor
                 else if (!checkd && !PropStreamer.StaticProps.Contains(ent.Handle)) PropStreamer.StaticProps.Add(ent.Handle);
 
                 ent.IsPositionFrozen = PropStreamer.StaticProps.Contains(ent.Handle);
+
+                // A prop with its physics on will not hold the layout a generator places it in, so the two
+                // rows that open them come and go with this one: the menu has to be built over again.
+                if (!IsProp(ent)) return;
+
+                int selected = _objectInfoMenu.SelectedIndex;
+                RedrawObjectInfoMenu(ent, false);
+                _objectInfoMenu.SelectedIndex = ClampIndex(selected, _objectInfoMenu.Items.Count);
             };
 
             var ident = new NativeItem("Identification", "Optional identification for easier access during scripting.");
@@ -124,22 +132,28 @@ namespace MapEditor
                 ident.AltTitle = newLabel;
             };
 
-            var stackingItem = new NativeItem(Translation.Translate("Stacking Tool"), Translation.Translate(
-                "Copy this object along its own X, Y and Z axes, spaced by the model's own size."));
-            stackingItem.Activated += (sender, item) => BeginStacking(ent);
-
-            var loopingItem = new NativeItem(Translation.Translate("Looping Generator"), Translation.Translate(
-                "Copy this object around a loop, each copy carried round and turned with it."));
-            loopingItem.Activated += (sender, item) => BeginLooping(ent);
-
             _objectInfoMenu.Add(posXitem);
             _objectInfoMenu.Add(posYitem);
             _objectInfoMenu.Add(posZitem);
             _objectInfoMenu.Add(rotXitem);
             _objectInfoMenu.Add(rotYitem);
             _objectInfoMenu.Add(rotZitem);
-            _objectInfoMenu.Add(stackingItem);
-            _objectInfoMenu.Add(loopingItem);
+
+            // The generators lay copies out and expect them to stay put: a vehicle drives off, a ped walks
+            // off, and a prop with its physics on falls over. Only a frozen prop holds what they build.
+            if (IsProp(ent) && PropStreamer.StaticProps.Contains(ent.Handle))
+            {
+                var stackingItem = new NativeItem(Translation.Translate("Stacking Tool"), Translation.Translate(
+                    "Copy this object along its own X, Y and Z axes, spaced by the model's own size."));
+                stackingItem.Activated += (sender, item) => BeginStacking(ent);
+                _objectInfoMenu.Add(stackingItem);
+
+                var loopingItem = new NativeItem(Translation.Translate("Looping Generator"), Translation.Translate(
+                    "Copy this object around a loop, each copy carried round and turned with it."));
+                loopingItem.Activated += (sender, item) => BeginLooping(ent);
+                _objectInfoMenu.Add(loopingItem);
+            }
+
             _objectInfoMenu.Add(dynamic);
             _objectInfoMenu.Add(ident);
 
@@ -243,20 +257,79 @@ namespace MapEditor
                     ((Ped)ent).Weapons.Give(PropStreamer.ActiveWeapons[ent.Handle], 999, true, true);
                 };
                 _objectInfoMenu.Add(wepItem);
+
+                RedrawPedComponentsMenu((Ped)ent);
+                var componentsItem = _objectInfoMenu.AddSubMenu(_pedComponentsMenu);
+                componentsItem.Title = Translation.Translate("Ped Components");
+                componentsItem.Description = Translation.Translate("Change what the ped wears: its clothes, its hair and its face.");
             }
 
             if (IsVehicle(ent))
             {
+                var veh = (Vehicle)ent;
+
                 var sirentBool = new NativeCheckboxItem(Translation.Translate("Siren"), PropStreamer.ActiveSirens.Contains(ent.Handle));
                 sirentBool.CheckboxChanged += (item, e) =>
                 {
                     var check = sirentBool.Checked;
                     if (check && !PropStreamer.ActiveSirens.Contains(ent.Handle)) PropStreamer.ActiveSirens.Add(ent.Handle);
                     else if (!check && PropStreamer.ActiveSirens.Contains(ent.Handle)) PropStreamer.ActiveSirens.Remove(ent.Handle);
-                    ((Vehicle)ent).IsSirenActive = check;
+                    veh.IsSirenActive = check;
                     _changesMade++;
                 };
                 _objectInfoMenu.Add(sirentBool);
+
+                var colors = (VehicleColor[])Enum.GetValues(typeof(VehicleColor));
+                var colorNames = colors.Select(c => c.ToString()).ToArray();
+
+                var primaryColor = new NativeListItem<string>(Translation.Translate("Primary Color"), colorNames)
+                {
+                    Description = Translation.Translate("The vehicle's main paint."),
+                    SelectedIndex = ClampIndex(Array.IndexOf(colors, veh.Mods.PrimaryColor), colors.Length),
+                };
+                primaryColor.ItemChanged += (item, e) =>
+                {
+                    veh.Mods.PrimaryColor = colors[e.Index];
+                    _changesMade++;
+                };
+                _objectInfoMenu.Add(primaryColor);
+
+                var secondaryColor = new NativeListItem<string>(Translation.Translate("Secondary Color"), colorNames)
+                {
+                    Description = Translation.Translate("The vehicle's second paint, worn by its trim and its stripes."),
+                    SelectedIndex = ClampIndex(Array.IndexOf(colors, veh.Mods.SecondaryColor), colors.Length),
+                };
+                secondaryColor.ItemChanged += (item, e) =>
+                {
+                    veh.Mods.SecondaryColor = colors[e.Index];
+                    _changesMade++;
+                };
+                _objectInfoMenu.Add(secondaryColor);
+
+                // Without a mod kit installed the game reports no liveries at all, even on the vehicles
+                // that carry them.
+                Function.Call(Hash.SET_VEHICLE_MOD_KIT, veh.Handle, 0);
+                int liveryCount = veh.Mods.LiveryCount;
+
+                if (liveryCount > 0)
+                {
+                    var liveries = new List<string> { Translation.Translate("None") };
+                    for (int i = 0; i < liveryCount; i++)
+                        liveries.Add((i + 1).ToString(CultureInfo.InvariantCulture));
+
+                    var liveryItem = new NativeListItem<string>(Translation.Translate("Livery"), liveries.ToArray())
+                    {
+                        Description = Translation.Translate("The pattern painted over the vehicle, where its model has any."),
+                        // The game counts the liveries from zero and calls "no livery" -1, but the row leads with None.
+                        SelectedIndex = ClampIndex(veh.Mods.Livery + 1, liveries.Count),
+                    };
+                    liveryItem.ItemChanged += (item, e) =>
+                    {
+                        veh.Mods.Livery = e.Index - 1;
+                        _changesMade++;
+                    };
+                    _objectInfoMenu.Add(liveryItem);
+                }
             }
 
             if (PropStreamer.IsPickup(ent.Handle))

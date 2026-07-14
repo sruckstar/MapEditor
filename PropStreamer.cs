@@ -358,6 +358,7 @@ namespace MapEditor
 					SirensActive = ActiveSirens.Contains(v),
 					PrimaryColor = (int)veh.Mods.PrimaryColor,
 					SecondaryColor = (int)veh.Mods.SecondaryColor,
+					Livery = veh.Mods.Livery,
 				});
 			}
 
@@ -377,6 +378,8 @@ namespace MapEditor
 					Id = (Identifications.ContainsKey(v) && !string.IsNullOrWhiteSpace(Identifications[v])) ? Identifications[v] : null,
 					Relationship = ActiveRelationships.ContainsKey(v) ? ActiveRelationships[v] : null,
 					Weapon = ActiveWeapons.ContainsKey(v) ? ActiveWeapons[v] : (WeaponHash?)null,
+					Drawables = PedComponents.ReadDrawables(ped),
+					Textures = PedComponents.ReadTextures(ped),
 				});
 			}
 

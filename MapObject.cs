@@ -23,11 +23,21 @@ namespace MapEditor
 		public string Action;
 		public string Relationship;
 		public WeaponHash? Weapon;
-	    
+
+		/// <summary>The piece and the texture worn in each of the ped's twelve slots. See <see cref="PedComponents"/>.</summary>
+		public int[] Drawables;
+		public int[] Textures;
+
 		// Vehicle stuff
 		public bool SirensActive;
 	    public int PrimaryColor;
 	    public int SecondaryColor;
+
+	    /// <summary>
+	    /// The vehicle's livery, or -1 for none. Maps written before liveries were kept say nothing about
+	    /// them, and "none" is what those vehicles were saved wearing.
+	    /// </summary>
+	    public int Livery = -1;
 
         // Pickup stuff
 	    public int Amount;
@@ -58,6 +68,16 @@ namespace MapEditor
             return Type == ObjectTypes.Ped;
         }
 
+	    public bool ShouldSerializeDrawables()
+	    {
+            return Type == ObjectTypes.Ped && Drawables != null;
+        }
+
+	    public bool ShouldSerializeTextures()
+	    {
+            return Type == ObjectTypes.Ped && Textures != null;
+        }
+
 	    public bool ShouldSerializeSirensActive()
 	    {
             return Type == ObjectTypes.Vehicle;
@@ -69,6 +89,11 @@ namespace MapEditor
         }
 
 	    public bool ShouldSerializeSecondaryColor()
+	    {
+            return Type == ObjectTypes.Vehicle;
+        }
+
+	    public bool ShouldSerializeLivery()
 	    {
             return Type == ObjectTypes.Vehicle;
         }

@@ -192,6 +192,11 @@ namespace MapEditor
 
 					vehicle.Mods.PrimaryColor = (VehicleColor) o.PrimaryColor;
 					vehicle.Mods.SecondaryColor = (VehicleColor) o.SecondaryColor;
+					if (o.Livery >= 0)
+					{
+						Function.Call(Hash.SET_VEHICLE_MOD_KIT, vehicle.Handle, 0);
+						vehicle.Mods.Livery = o.Livery;
+					}
 					vehicle.IsSirenActive = o.SirensActive;
 					vehicle.IsPositionFrozen = !o.Dynamic;
 					Track(vehicle, map);
@@ -204,6 +209,7 @@ namespace MapEditor
 					if (ped == null) break;
 
 					ped.IsPositionFrozen = !o.Dynamic;
+					PedComponents.Apply(ped, o.Drawables, o.Textures);
 
 					if (o.Weapon.HasValue && o.Weapon.Value != WeaponHash.Unarmed)
 						ped.Weapons.Give(o.Weapon.Value, 999, true, true);
