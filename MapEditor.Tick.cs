@@ -414,6 +414,9 @@ namespace MapEditor
 
             World.RenderingCamera = _objectPreviewCamera;
 
+            if (Game.IsControlJustPressed(Control.Context))
+                ToggleFavorite();
+
             if (Game.IsControlJustPressed(Control.Jump))
             {
                 string query = Compat.GetUserInput(255);

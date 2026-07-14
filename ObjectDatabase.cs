@@ -25,6 +25,17 @@ namespace MapEditor
 
 		public static Dictionary<string, int> PedDb;
 
+		/// <summary>The list one object type is browsed, searched and placed from.</summary>
+		public static Dictionary<string, int> DbFor(ObjectTypes type)
+		{
+			switch (type)
+			{
+				case ObjectTypes.Vehicle: return VehicleDb;
+				case ObjectTypes.Ped: return PedDb;
+				default: return MainDb;
+			}
+		}
+
 		public static Dictionary<Relationship, RelationshipGroup> RelationshipDb = new Dictionary<Relationship, RelationshipGroup>();
 
 	    public static RelationshipGroup BallasGroup;

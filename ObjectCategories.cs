@@ -59,6 +59,16 @@ namespace MapEditor
 			Props = Load("Props", ObjectDatabase.MainDb, null);
 			Vehicles = Load("Vehicles", ObjectDatabase.VehicleDb, BuildVehicleCategories);
 			Peds = Load("Peds", ObjectDatabase.PedDb, BuildPedCategories);
+
+			// Must follow the loads above: a category file can fold a model the list has never seen into the
+			// database, and a favorite naming that model would otherwise be dropped as unknown.
+			Favorites.LoadAll();
+
+			// First, ahead of even "All": whatever else the player is browsing for, their own shortlist is
+			// the one they came back for.
+			Props.Insert(0, Favorites.CategoryFor(ObjectTypes.Prop));
+			Vehicles.Insert(0, Favorites.CategoryFor(ObjectTypes.Vehicle));
+			Peds.Insert(0, Favorites.CategoryFor(ObjectTypes.Ped));
 		}
 
 		/// <summary>

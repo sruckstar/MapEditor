@@ -52,12 +52,31 @@ never empty the list. The table of prefixes lives in `Dlc.cs`.
 Vehicles and peds have no such row: both lists are keyed by ScriptHookVDotNet enum names (`Deveste`,
 `Hooker01SFY`), which carry no DLC prefix to read.
 
+## Favorites
+
+The first category of every type is **Favorites**, and it is the one the mod maintains itself. Highlight
+any object, vehicle or ped — in a category or in the search results — and press the *Favorite* button
+(`E` / gamepad `X`) to star it. Starred models are marked with a star wherever they are listed, and
+pressing the button again unstars them.
+
+The list is written straight back to disk, one file per type, so it survives a restart:
+
+```
+scripts\MapEditor\Favorites\Props.txt
+scripts\MapEditor\Favorites\Vehicles.txt
+scripts\MapEditor\Favorites\Peds.txt
+```
+
+The format is the same as a category file, so the list can be edited or shared by hand — but unlike a
+category file, a model name the object list does not know is dropped rather than resolved, because this
+file is written by the mod and an unknown name in it is a stale entry.
+
 ## Adding a category
 
 Drop a new `.txt` into the folder. Number it to place it in the menu.
 
 Nothing can fall through the cracks: any model that no file claims is collected into an
-**Uncategorized** entry at the bottom of the menu, and **All** at the top always lists everything.
+**Uncategorized** entry at the bottom of the menu, and **All** always lists everything.
 
 ## Regenerating
 

@@ -203,6 +203,7 @@ namespace MapEditor
             _objectsMenu.Buttons.Add(new InstructionalButton(Translation.Translate("Change Axis"), Control.SelectWeapon));
             _objectsMenu.Buttons.Add(new InstructionalButton(Translation.Translate("Zoom"), Control.MoveUpDown));
             _objectsMenu.Buttons.Add(new InstructionalButton(Translation.Translate("Search"), Control.Jump));
+            _objectsMenu.Buttons.Add(new InstructionalButton(Translation.Translate("Favorite"), Control.Context));
 
             _searchMenu = new NativeMenu("Map Editor", "~b~" + Translation.Translate("PLACE OBJECT"));
             _searchMenu.ItemActivated += OnObjectSelect;
@@ -213,6 +214,7 @@ namespace MapEditor
             _searchMenu.Buttons.Add(new InstructionalButton(Translation.Translate("Change Axis"), Control.SelectWeapon));
             _searchMenu.Buttons.Add(new InstructionalButton(Translation.Translate("Zoom"), Control.MoveUpDown));
             _searchMenu.Buttons.Add(new InstructionalButton(Translation.Translate("Search"), Control.Jump));
+            _searchMenu.Buttons.Add(new InstructionalButton(Translation.Translate("Favorite"), Control.Context));
 
             _mainMenu = new NativeMenu("Map Editor", "~b~" + Translation.Translate("MAIN MENU"));
             _mainMenu.Buttons.Visible = false;
@@ -333,6 +335,21 @@ namespace MapEditor
             {
                 SetMenuVisible(_categoriesMenu, true);
                 return;
+            }
+
+            // Starring a search result while browsing the favorites list changes the very category being
+            // backed out into, so it is the one category that cannot just be shown again as it was.
+            var favorites = Favorites.CategoryFor(_currentObjectType);
+            if (ReferenceEquals(_currentCategory, favorites))
+            {
+                if (favorites.Objects.Count == 0)
+                {
+                    _currentCategory = null;
+                    SetMenuVisible(_categoriesMenu, true);
+                    return;
+                }
+
+                RedrawObjectsMenu(favorites, _currentObjectType, _objectsMenu.SelectedIndex);
             }
 
             SetMenuVisible(_objectsMenu, true);

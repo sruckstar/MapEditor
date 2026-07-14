@@ -21,6 +21,9 @@ namespace MapEditor
         private static readonly BadgeSet FolderBadge = new BadgeSet("commonmenu", "shop_franklin_icon_a", "shop_franklin_icon_b");
         private static readonly BadgeSet AlertBadge = new BadgeSet("commonmenu", "mp_alerttriangle", "mp_alerttriangle");
 
+        /// <summary>Marks a starred model, wherever it is listed. See <see cref="ToggleFavorite"/>.</summary>
+        private static readonly BadgeSet StarBadge = new BadgeSet("commonmenu", "shop_new_star", "shop_new_star");
+
         private enum EntityMenuKind
         {
             Entity,
@@ -522,7 +525,18 @@ namespace MapEditor
             int index = _categoriesMenu.Items.IndexOf(e.Item);
             if (index < 0 || index >= categories.Count) return;
 
-            _currentCategory = categories[index];
+            var category = categories[index];
+
+            // Favorites is the one category that can be empty, and an empty menu draws as a bare header
+            // with nothing to move onto and no row to back out of.
+            if (category.Objects.Count == 0)
+            {
+                Compat.Notify("~b~~h~Map Editor~h~~w~~n~" + Translation.Translate(
+                    "No favorites yet. Highlight an object while browsing and press the favorite button to add it."));
+                return;
+            }
+
+            _currentCategory = category;
             RedrawObjectsMenu(_currentCategory, _currentObjectType);
             _objectsMenu.Name = "~b~" + _currentCategory.Name.ToUpper();
 
@@ -570,8 +584,78 @@ namespace MapEditor
 
             NativeItem row;
             if (!rows.TryGetValue(model, out row))
+            {
                 rows[model] = row = new NativeItem(model);
+                // Only has to be read here: the row is shared by every list the model appears in, so
+                // ToggleFavorite re-badging the one instance keeps all of them in step from then on.
+                if (Favorites.IsFavorite(type, model))
+                    row.LeftBadgeSet = StarBadge;
+            }
             return row;
+        }
+
+        /// <summary>
+        /// Stars or unstars the highlighted model, from the object list or the search results alike — the
+        /// point of the list being to catch the model the player just went looking for.
+        /// </summary>
+        private void ToggleFavorite()
+        {
+            var menu = _searchMenu.Visible ? _searchMenu : (_objectsMenu.Visible ? _objectsMenu : null);
+            if (menu == null) return;
+
+            int index = menu.SelectedIndex;
+            if (index < 0 || index >= menu.Items.Count) return;
+
+            var item = menu.Items[index];
+            // The DLC filter shares the object list, and there is no model behind it to star.
+            if (ReferenceEquals(item, _dlcFilterItem)) return;
+
+            var db = ObjectDatabase.DbFor(_currentObjectType);
+            if (db == null || !db.ContainsKey(item.Title)) return;
+
+            bool starred = Favorites.Toggle(_currentObjectType, item.Title);
+            item.LeftBadgeSet = starred ? StarBadge : null;
+
+            var favorites = Favorites.CategoryFor(_currentObjectType);
+
+            // The category just gained or lost a model, so the rows built for it no longer describe it.
+            _rowsByCategory.Remove(favorites);
+            RefreshCategoryCount(favorites);
+
+            Compat.Notify("~b~~h~Map Editor~h~~w~~n~" + item.Title + "~n~" +
+                Translation.Translate(starred ? "Added to Favorites" : "Removed from Favorites"));
+
+            // Unstarring from inside the favorites list has to take the row out from under the player.
+            if (starred || menu != _objectsMenu || !ReferenceEquals(_currentCategory, favorites)) return;
+
+            if (favorites.Objects.Count == 0)
+            {
+                // Nothing left to browse, and an empty menu offers no way back: step up a level instead.
+                _previewProp?.Delete();
+                _previewProp = null;
+                _currentCategory = null;
+                SetMenuVisible(_objectsMenu, false);
+                SetMenuVisible(_categoriesMenu, true);
+                return;
+            }
+
+            // Holding the index rather than the row lands the cursor on whatever moved up into its place.
+            RedrawObjectsMenu(favorites, _currentObjectType, index);
+            OnIndexChange(_objectsMenu, new SelectedEventArgs(_objectsMenu.SelectedIndex, 0));
+        }
+
+        /// <summary>
+        /// Re-reads a category's object count onto its row in <see cref="_categoriesMenu"/>. Favorites is
+        /// the only category that changes while the menus are up, and the player can return to that menu
+        /// without it being rebuilt.
+        /// </summary>
+        private void RefreshCategoryCount(ObjectCategory category)
+        {
+            // The rows were built straight off this list, so they line up index for index.
+            int index = ObjectCategories.For(_currentObjectType).IndexOf(category);
+            if (index < 0 || index >= _categoriesMenu.Items.Count) return;
+
+            _categoriesMenu.Items[index].AltTitle = category.Objects.Count.ToString(CultureInfo.InvariantCulture);
         }
 
         /// <summary>
@@ -634,9 +718,10 @@ namespace MapEditor
         }
 
         /// <summary>
-        /// Builds the object list for a category, headed by the DLC filter.
+        /// Builds the object list for a category, headed by the DLC filter. <paramref name="selectedIndex"/>
+        /// overrides where the cursor lands, for a rebuild that has to leave it where the player put it.
         /// </summary>
-        private void RedrawObjectsMenu(ObjectCategory category, ObjectTypes type = ObjectTypes.Prop)
+        private void RedrawObjectsMenu(ObjectCategory category, ObjectTypes type = ObjectTypes.Prop, int selectedIndex = -1)
         {
             _dlcFilterItem = null;
 
@@ -664,7 +749,7 @@ namespace MapEditor
                 };
             }
 
-            FillObjectsMenu(rows, type, true);
+            FillObjectsMenu(rows, type, true, selectedIndex);
         }
 
         /// <summary>
@@ -672,7 +757,7 @@ namespace MapEditor
         /// re-added rather than rebuilt: this also runs from that item's own ItemChanged, so the instance
         /// the menu is part-way through handling has to survive the refill.
         /// </summary>
-        private void FillObjectsMenu(CategoryRows rows, ObjectTypes type, bool selectFirstObject)
+        private void FillObjectsMenu(CategoryRows rows, ObjectTypes type, bool selectFirstObject, int selectedIndex = -1)
         {
             // Picking the filter's group is the whole cost of a filter change now: the rows behind it were
             // built and sorted into it when the category was first opened.
@@ -695,7 +780,9 @@ namespace MapEditor
 
             // Opening a category lands on its first model, so that it previews something right away; a
             // change of filter keeps the cursor where the player left it, on the filter row.
-            var selected = selectFirstObject && _dlcFilterItem != null && group.Items.Count > 0 ? 1 : 0;
+            var selected = selectedIndex >= 0
+                ? selectedIndex
+                : selectFirstObject && _dlcFilterItem != null && group.Items.Count > 0 ? 1 : 0;
             SetMenuItems(_objectsMenu, _dlcFilterItem, group.Items, selected);
         }
 
