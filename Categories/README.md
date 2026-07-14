@@ -10,16 +10,13 @@ Copy the `Categories` folder next to the other Map Editor data files:
 
 ```
 scripts\MapEditor\Categories\Props\*.txt      <- ships with the mod (from ObjectList.ini)
-scripts\MapEditor\Categories\Vehicles\*.txt   <- written on first run
-scripts\MapEditor\Categories\Peds\*.txt       <- written on first run
+scripts\MapEditor\Categories\Vehicles\*.txt   <- ships with the mod (from VehicleList.ini)
+scripts\MapEditor\Categories\Peds\*.txt       <- ships with the mod (from PedList.ini)
 ```
 
-Vehicle and ped categories cannot ship, because both lists are built at runtime from the
-ScriptHookVDotNet enums. The mod writes them out the first time it runs and reads them back like any
-other category file, so they are just as editable.
-
-If `Props` is missing the picker still works — it falls back to a single **All** category, i.e. the
-old flat list.
+All three ship, and all three are read the same way. A folder that is missing is not fatal: vehicles
+and peds are rebuilt from the built-in rules on the spot, and a missing `Props` falls back to a
+single **All** category, i.e. the old flat list.
 
 ## File format
 
@@ -49,8 +46,9 @@ to the objects one add-on pack shipped — the pack is read off the prefix on th
 claims counts as **Base Game**. A category only offers the packs it actually contains, so the filter can
 never empty the list. The table of prefixes lives in `Dlc.cs`.
 
-Vehicles and peds have no such row: both lists are keyed by ScriptHookVDotNet enum names (`Deveste`,
-`Hooker01SFY`), which carry no DLC prefix to read.
+Vehicles and peds have no such row: their names (`deveste`, `S_F_Y_Hooker_01`) carry no DLC prefix to
+read — a vehicle name says nothing about the pack it shipped in, and a ped prefix names its family
+(`a_c_` animal, `s_m_` service) rather than an add-on.
 
 ## Favorites
 
@@ -80,13 +78,17 @@ Nothing can fall through the cracks: any model that no file claims is collected 
 
 ## Regenerating
 
-`Categories/Props/*.txt` was generated from `ObjectList.ini`. To re-derive the split from scratch
-after the object list gains new models:
+Each folder was generated from the flat list the mod loads that type from. To re-derive a split from
+scratch after a list gains new models:
 
 ```
-py tools/generate_categories.py
+py tools/generate_categories.py                 # Props,   from ObjectList.ini
+py tools/generate_vehicle_ped_categories.py     # Vehicles and Peds, from temp/VehicleList.ini and temp/PedList.ini
 ```
 
-This **overwrites** the prop category files, discarding hand-edits — for a one-off change, edit the
-`.txt` directly instead. Vehicle and ped files are rebuilt from the in-game settings menu
-(*Rebuild Vehicle & Ped Categories*), which likewise discards edits to those two folders.
+Vehicles are grouped by the class the game itself gives them (`vehicles.meta`), peds by the family
+their model name announces (`a_c_` animals, `ig_` story, `s_m_` service…).
+
+Both scripts **overwrite** the files they own, discarding hand-edits — for a one-off change, edit the
+`.txt` directly instead. The same goes for the in-game *Rebuild Vehicle & Ped Categories*, which
+throws the two generated folders away and rebuilds them from the game.

@@ -109,10 +109,12 @@ namespace MapEditor
 
 		public void OnTick(object sender, EventArgs e)
 		{
-			// The maps flagged for autoloading, plus anything left in the legacy "AutoloadMaps" folder.
+			// The maps flagged for autoloading, plus anything left in the legacy "AutoloadMaps" folder, and then
+			// the map the player was editing when the script last went down, if it went down with one open.
 			if (!_hasLoaded)
 			{
 				AutoloadedMaps.LoadAll();
+				RestoreSession();
 				_hasLoaded = true;
 			}
 			_menuPool.Process();

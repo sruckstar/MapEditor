@@ -26,9 +26,10 @@ namespace MapEditor
 	/// <see cref="CategoriesRoot"/>. The files are the source of truth: to move an object between
 	/// categories, or to add a model the lists do not know about, edit the .txt.
 	///
-	/// Prop categories ship with the mod (generated from ObjectList.ini by tools/generate_categories.py).
-	/// Vehicle and ped categories cannot ship, because both lists are built at runtime from the SHVDN
-	/// enums, so they are written out on first run and read back like any other category file.
+	/// All three sets ship with the mod, generated from the flat lists by tools/generate_categories.py
+	/// (props) and tools/generate_vehicle_ped_categories.py (vehicles, peds). A missing vehicle or ped
+	/// folder is written out on first run instead, from <see cref="BuildVehicleCategories"/> and
+	/// <see cref="BuildPedCategories"/>, and read back like any other category file.
 	/// </summary>
 	public static class ObjectCategories
 	{

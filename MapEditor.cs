@@ -405,30 +405,48 @@ namespace MapEditor
 
         /// <summary>
         /// Nothing else will run after this: the script is being reloaded, or it has been aborted over an
-        /// unhandled exception. The freecam state it was holding is all game-side and outlives it — a camera
-        /// still rendering, a frozen invisible player, a preview prop hanging in the air over the preview
-        /// spot — and the player has no way left to undo any of it, so it is given back here.
+        /// unhandled exception. Everything it was holding is game-side and outlives it — a camera still
+        /// rendering, a frozen invisible player, a preview prop hanging in the air over the preview spot, and
+        /// the whole placed map — while the player is left with no script that can undo any of it. So it is all
+        /// given back here.
         ///
-        /// The placed map is deliberately left standing: it is the player's work, and a reload is not a
-        /// reason to throw it away.
+        /// The map is the player's work and is not thrown away: it goes to disk first and comes back on the
+        /// next start (see <see cref="SessionRestore"/> and <see cref="RestoreSession"/>), as a map the editor
+        /// owns again and the player can clear, edit or save. Leaving it standing instead would strand it in the
+        /// world, belonging to nothing, until the game itself is restarted.
         /// </summary>
         private void OnAborted(object sender, EventArgs e)
         {
             _previewProp?.Delete();
             _previewProp = null;
 
-            if (!IsInFreecam) return;
+            // Before the map, because it is the part the player cannot go on playing without: whatever the rest
+            // of this runs into, they have their camera and their character back.
+            if (IsInFreecam)
+            {
+                IsInFreecam = false;
+                World.RenderingCamera = null;
+                World.DestroyAllCameras();
+                _mainCamera = null;
+                _objectPreviewCamera = null;
 
-            IsInFreecam = false;
-            World.RenderingCamera = null;
-            World.DestroyAllCameras();
-            _mainCamera = null;
-            _objectPreviewCamera = null;
+                var player = Game.Player.Character;
+                player.IsPositionFrozen = false;
+                player.IsVisible = true;
+                player.Position -= new Vector3(0f, 0f, player.HeightAboveGround - 1f);
+            }
 
-            var player = Game.Player.Character;
-            player.IsPositionFrozen = false;
-            player.IsVisible = true;
-            player.Position -= new Vector3(0f, 0f, player.HeightAboveGround - 1f);
+            // These come back from their own files on the next start, so anything left standing here is spawned
+            // a second time on top of itself.
+            AutoloadedMaps.UnloadAll();
+
+            // The map goes to disk and then out of the world, for the next instance of the script to put back.
+            // If it could not be written, the world is the only place it still exists and it stays there.
+            if (SessionRestore.Save())
+            {
+                JavascriptHook.StopAllScripts();
+                PropStreamer.RemoveAll();
+            }
         }
 
         private void ToggleFreecam()
@@ -705,7 +723,33 @@ namespace MapEditor
 			return null;
 		}
 
-	    private void LoadMap(string filename, MapSerializer.Format format)
+		/// <summary>
+		/// Picks the map back up where the instance before this one left it, if the script was reloaded with a
+		/// map open. It comes back as the map being edited — in the entity menu, in the counter, selectable,
+		/// saveable, and cleared by "New Map" — which is the whole point of the round trip: the objects were
+		/// standing in the world either way, and this is what makes them the player's again.
+		/// </summary>
+		private void RestoreSession()
+		{
+			if (!SessionRestore.Pending) return;
+
+			LoadMap(SessionRestore.FilePath, MapSerializer.Format.NormalXml, restoring: true);
+
+			// Taken away as soon as it has been spent. It is a hand-off between two instances of the script, not
+			// a map file, and it must not be restored a second time on some later start.
+			SessionRestore.Discard();
+
+			Compat.Notify("~b~~h~Map Editor~h~~w~~n~" +
+			              Translation.Translate("Restored the map you were working on before the script reloaded."));
+		}
+
+		/// <summary>
+		/// <paramref name="restoring"/> marks the map as one the editor is picking back up after a script reload
+		/// rather than one the player just opened: it was never really unloaded, so it keeps the metadata it
+		/// already had — the file it is being saved to above all — and it stays where it is instead of dragging
+		/// the player back to its loading point.
+		/// </summary>
+	    private void LoadMap(string filename, MapSerializer.Format format, bool restoring = false)
 	    {
 		    filename = ResolveMapPath(filename, format);
 
@@ -721,7 +765,7 @@ namespace MapEditor
 			    var map2Load = des.Deserialize(filename, format);
 			    if (map2Load == null) return;
 
-		        if (map2Load.Metadata != null && map2Load.Metadata.LoadingPoint.HasValue)
+		        if (!restoring && map2Load.Metadata != null && map2Load.Metadata.LoadingPoint.HasValue)
 		        {
 		            Game.Player.Character.Position = map2Load.Metadata.LoadingPoint.Value;
                     Wait(500);
@@ -864,16 +908,21 @@ namespace MapEditor
                     JavascriptHook.StartScript(File.ReadAllText(new FileInfo(filename).Directory.FullName + "\\" + Path.GetFileNameWithoutExtension(filename) + ".js"), handles);
 		        }
 
-		        if (map2Load.Metadata != null && map2Load.Metadata.TeleportPoint.HasValue)
+		        if (!restoring && map2Load.Metadata != null && map2Load.Metadata.TeleportPoint.HasValue)
 		        {
 		            Game.Player.Character.Position = map2Load.Metadata.TeleportPoint.Value;
 		        }
 
 		        PropStreamer.CurrentMapMetadata = map2Load.Metadata ?? new MapMetadata();
 
-		        PropStreamer.CurrentMapMetadata.Filename = filename;
+		        // A restored map is still the map it was before the reload, saved to the file it was already
+		        // saved to. The session file it came back from is not that file, and must not become it.
+		        if (!restoring)
+		            PropStreamer.CurrentMapMetadata.Filename = filename;
 
-			    Compat.Notify("~b~~h~Map Editor~h~~w~~n~" + Translation.Translate("Loaded map") + " ~h~" + filename + "~h~.");
+		        // The caller says what a restore has to say, and it is not "loaded map scripts\MapEditor.SessionRestore.xml".
+		        if (!restoring)
+			        Compat.Notify("~b~~h~Map Editor~h~~w~~n~" + Translation.Translate("Loaded map") + " ~h~" + filename + "~h~.");
 		    }
 		    catch (Exception e)
 		    {

@@ -49,6 +49,7 @@
     <None Include="Categories\**\*.txt" />
     <None Include="Categories\README.md" />
     <None Include="tools\generate_categories.py" />
+    <None Include="tools\generate_vehicle_ped_categories.py" />
   </ItemGroup>
 
 </Project>
