@@ -274,6 +274,15 @@ namespace MapEditor
                 SaveSettings();
             };
 
+            var worldNamesItem = new NativeCheckboxItem(Translation.Translate("World Object Names"), Translation.Translate(
+                "Shows the model name of the game's own objects around you, so you can copy or favorite them by sight."),
+                _settings.WorldObjectNames);
+            worldNamesItem.CheckboxChanged += (sender, e) =>
+            {
+                _settings.WorldObjectNames = worldNamesItem.Checked;
+                SaveSettings();
+            };
+
             var scriptItem = new NativeCheckboxItem(Translation.Translate("Execute Scripts"), _settings.LoadScripts);
             scriptItem.CheckboxChanged += (sender, e) =>
             {
@@ -358,6 +367,7 @@ namespace MapEditor
             _settingsMenu.Add(butts);
             _settingsMenu.Add(counterItem);
             _settingsMenu.Add(snapper);
+            _settingsMenu.Add(worldNamesItem);
             _settingsMenu.Add(scriptItem);
             _settingsMenu.Add(objectValidationItem);
             _settingsMenu.Add(resetInvalid);
@@ -610,20 +620,11 @@ namespace MapEditor
             // The DLC filter shares the object list, and there is no model behind it to star.
             if (ReferenceEquals(item, _dlcFilterItem)) return;
 
-            var db = ObjectDatabase.DbFor(_currentObjectType);
-            if (db == null || !db.ContainsKey(item.Title)) return;
+            bool? result = ToggleFavoriteModel(_currentObjectType, item.Title);
+            if (result == null) return;
 
-            bool starred = Favorites.Toggle(_currentObjectType, item.Title);
-            item.LeftBadgeSet = starred ? StarBadge : null;
-
+            bool starred = result.Value;
             var favorites = Favorites.CategoryFor(_currentObjectType);
-
-            // The category just gained or lost a model, so the rows built for it no longer describe it.
-            _rowsByCategory.Remove(favorites);
-            RefreshCategoryCount(favorites);
-
-            Compat.Notify("~b~~h~Map Editor~h~~w~~n~" + item.Title + "~n~" +
-                Translation.Translate(starred ? "Added to Favorites" : "Removed from Favorites"));
 
             // Unstarring from inside the favorites list has to take the row out from under the player.
             if (starred || menu != _objectsMenu || !ReferenceEquals(_currentCategory, favorites)) return;
@@ -642,6 +643,37 @@ namespace MapEditor
             // Holding the index rather than the row lands the cursor on whatever moved up into its place.
             RedrawObjectsMenu(favorites, _currentObjectType, index);
             OnIndexChange(_objectsMenu, new SelectedEventArgs(_objectsMenu.SelectedIndex, 0));
+        }
+
+        /// <summary>
+        /// Stars or unstars a model and brings everything that shows it back in step, whether the player got to
+        /// it through the object list or by aiming at one standing in the world. Returns whether the model ended
+        /// up starred, or null when no object list holds it and there is nothing to star.
+        /// </summary>
+        private bool? ToggleFavoriteModel(ObjectTypes type, string model)
+        {
+            var db = ObjectDatabase.DbFor(type);
+            if (db == null || !db.ContainsKey(model)) return null;
+
+            bool starred = Favorites.Toggle(type, model);
+
+            // Every list the model appears in hands out the one row (see RowFor), so re-badging that instance
+            // badges it everywhere at once. There is no row yet if the player has never browsed to the model.
+            Dictionary<string, NativeItem> rows;
+            NativeItem row;
+            if (_rowsByModel.TryGetValue(type, out rows) && rows.TryGetValue(model, out row))
+                row.LeftBadgeSet = starred ? StarBadge : null;
+
+            var favorites = Favorites.CategoryFor(type);
+
+            // The category just gained or lost a model, so the rows built for it no longer describe it.
+            _rowsByCategory.Remove(favorites);
+            RefreshCategoryCount(favorites);
+
+            Compat.Notify("~b~~h~Map Editor~h~~w~~n~" + model + "~n~" +
+                Translation.Translate(starred ? "Added to Favorites" : "Removed from Favorites"));
+
+            return starred;
         }
 
         /// <summary>

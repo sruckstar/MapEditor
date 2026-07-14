@@ -21,6 +21,7 @@ namespace MapEditor
 	        LoadScripts = true;
 	        Translation = "Auto";
 	        OmitInvalidObjects = true;
+	        WorldObjectNames = false;
 	    }
 
 	    public string Translation;
@@ -39,5 +40,8 @@ namespace MapEditor
 	    public bool LoadScripts;
 	    public bool? BoundingBox;
 	    public bool OmitInvalidObjects;
+
+	    /// <summary>Names the game's own objects where they stand, so they can be copied or starred by sight.</summary>
+	    public bool WorldObjectNames;
 	}
 }

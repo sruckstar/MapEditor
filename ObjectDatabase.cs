@@ -36,6 +36,47 @@ namespace MapEditor
 			}
 		}
 
+		/// <summary>
+		/// The reverse of <see cref="DbFor"/>, built on the first lookup of a type. An entity in the world only
+		/// carries its model hash, so naming one means walking a list of 25,000 names backwards — worth doing
+		/// once and keeping, since <see cref="MapEditor.DrawWorldObjectNames"/> asks this of every object around
+		/// the camera.
+		/// </summary>
+		private static readonly Dictionary<ObjectTypes, Dictionary<int, string>> NameByHash =
+			new Dictionary<ObjectTypes, Dictionary<int, string>>();
+
+		/// <summary>
+		/// The name the list of <paramref name="type"/> holds <paramref name="hash"/> under, or null when no
+		/// name in it resolves to that hash — an unlisted model, which can still be copied but cannot be
+		/// starred, as a favorite is stored by name.
+		/// </summary>
+		public static string NameFor(ObjectTypes type, int hash)
+		{
+			var db = DbFor(type);
+			if (db == null) return null;
+
+			Dictionary<int, string> names;
+			if (!NameByHash.TryGetValue(type, out names))
+			{
+				NameByHash[type] = names = new Dictionary<int, string>(db.Count);
+				// Two names for one hash is a duplicate list entry, not a second model: keep the first.
+				foreach (var pair in db)
+				{
+					if (!names.ContainsKey(pair.Value))
+						names.Add(pair.Value, pair.Key);
+				}
+			}
+
+			string name;
+			return names.TryGetValue(hash, out name) ? name : null;
+		}
+
+		/// <summary>Drops the reverse lookups of a list that is about to be replaced.</summary>
+		internal static void ResetNameCache()
+		{
+			NameByHash.Clear();
+		}
+
 		public static Dictionary<Relationship, RelationshipGroup> RelationshipDb = new Dictionary<Relationship, RelationshipGroup>();
 
 	    public static RelationshipGroup BallasGroup;
@@ -108,6 +149,7 @@ namespace MapEditor
 	    {
 			VehicleDb = new Dictionary<string, int>();
 			PedDb = new Dictionary<string, int>();
+			ResetNameCache();
 
 		    // Vehicles.
 		    foreach (string veh in Enum.GetNames(typeof(VehicleHash)))
@@ -151,6 +193,7 @@ namespace MapEditor
 		internal static void LoadFromFile(string path, ref Dictionary<string, int> dictToLoadto)
         {
             dictToLoadto = new Dictionary<string, int>();
+            ResetNameCache();
             string[] lines = File.ReadAllLines(path);
             foreach (string line in lines)
             {

@@ -40,6 +40,8 @@ namespace MapEditor
                 // Control.Duck is the LCTRL binding on keyboard, which is the key IsMultiSelectKeyDown() looks for.
                 new InstructionalButton(Translation.Translate("Add to Selection"), Control.Duck),
                 new InstructionalButton(Translation.Translate("Copy Entity"), Control.LookBehind),
+                // The same key stars the highlighted model in the object picker.
+                new InstructionalButton(Translation.Translate("Favorite Entity"), Control.Context),
                 new InstructionalButton(Translation.Translate("Delete Entity"), Control.CreatorDelete))
             {
                 Visible = true,
@@ -247,6 +249,9 @@ namespace MapEditor
 			{
 			    DrawCrosshair(hitEnt);
 			}
+
+			if (_settings.WorldObjectNames)
+			    DrawWorldObjectNames(hitEnt);
 
             Function.Call(Hash.DISABLE_ALL_CONTROL_ACTIONS, 0);
             Function.Call(Hash.ENABLE_CONTROL_ACTION, 0, (int)Control.LookLeftRight);

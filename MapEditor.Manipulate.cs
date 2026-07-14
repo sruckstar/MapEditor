@@ -215,6 +215,14 @@ namespace MapEditor
                     }
                 }
 
+                // Copying takes the object under the crosshair whether the editor placed it or the game did;
+                // starring its model is the other half of that, for the game's objects that are only ever
+                // found by looking at them.
+                if (Game.IsControlJustPressed(Control.Context) && hitEnt != null)
+                {
+                    FavoriteAimedEntity(hitEnt);
+                }
+
                 if (Game.IsControlJustPressed(Control.CreatorDelete))
                 {
                     if (_multiSelection.Count > 0)
