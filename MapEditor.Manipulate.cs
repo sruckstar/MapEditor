@@ -511,23 +511,32 @@ namespace MapEditor
             }
         }
 
+        /// <summary>
+        /// Takes an entity off the map: its row in the entity menu, everything keyed by its handle, and
+        /// the entity itself. Handles have to be cleaned up before the entity goes, and every one of them,
+        /// or the next entity to be handed the same handle inherits what was left behind.
+        /// </summary>
+        private void DeleteEditorEntity(Entity ent)
+        {
+            if (ent == null || !ent.Exists()) return;
+
+            RemoveItemFromEntityMenu(ent);
+            PropStreamer.Identifications.Remove(ent.Handle);
+            PropStreamer.ActiveScenarios.Remove(ent.Handle);
+            PropStreamer.ActiveRelationships.Remove(ent.Handle);
+            PropStreamer.ActiveWeapons.Remove(ent.Handle);
+            PropStreamer.Doors.Remove(ent.Handle);
+
+            if (PropStreamer.IsPickup(ent.Handle))
+                PropStreamer.RemovePickup(ent.Handle);
+            else
+                PropStreamer.RemoveEntity(ent.Handle);
+        }
+
         private void DeleteMultiSelection()
         {
             foreach (Entity ent in _multiSelection)
-            {
-                if (ent == null || !ent.Exists()) continue;
-
-                RemoveItemFromEntityMenu(ent);
-                PropStreamer.Identifications.Remove(ent.Handle);
-                PropStreamer.ActiveScenarios.Remove(ent.Handle);
-                PropStreamer.ActiveRelationships.Remove(ent.Handle);
-                PropStreamer.ActiveWeapons.Remove(ent.Handle);
-
-                if (PropStreamer.IsPickup(ent.Handle))
-                    PropStreamer.RemovePickup(ent.Handle);
-                else
-                    PropStreamer.RemoveEntity(ent.Handle);
-            }
+                DeleteEditorEntity(ent);
 
             _multiSelection.Clear();
             _multiSelectionOffsets.Clear();

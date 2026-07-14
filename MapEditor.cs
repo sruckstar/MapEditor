@@ -159,6 +159,9 @@ namespace MapEditor
 			_objectInfoMenu.Buttons.Visible = false;
 			_menuPool.Add(_objectInfoMenu);
 
+			BuildStackingMenu();
+			BuildLoopingMenu();
+
 			ModManager.InitMenu();
 
 			_objectsMenu = new NativeMenu("Map Editor", "~b~" + Translation.Translate("PLACE OBJECT"));

@@ -124,12 +124,22 @@ namespace MapEditor
                 ident.AltTitle = newLabel;
             };
 
+            var stackingItem = new NativeItem(Translation.Translate("Stacking Tool"), Translation.Translate(
+                "Copy this object along its own X, Y and Z axes, spaced by the model's own size."));
+            stackingItem.Activated += (sender, item) => BeginStacking(ent);
+
+            var loopingItem = new NativeItem(Translation.Translate("Looping Generator"), Translation.Translate(
+                "Copy this object around a loop, each copy carried round and turned with it."));
+            loopingItem.Activated += (sender, item) => BeginLooping(ent);
+
             _objectInfoMenu.Add(posXitem);
             _objectInfoMenu.Add(posYitem);
             _objectInfoMenu.Add(posZitem);
             _objectInfoMenu.Add(rotXitem);
             _objectInfoMenu.Add(rotYitem);
             _objectInfoMenu.Add(rotZitem);
+            _objectInfoMenu.Add(stackingItem);
+            _objectInfoMenu.Add(loopingItem);
             _objectInfoMenu.Add(dynamic);
             _objectInfoMenu.Add(ident);
 

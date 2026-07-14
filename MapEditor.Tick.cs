@@ -19,6 +19,8 @@ namespace MapEditor
         private InstructionalButtons _freelookButtons;
         private InstructionalButtons _selectedButtons;
         private InstructionalButtons _snappedButtons;
+        private InstructionalButtons _stackingButtons;
+        private InstructionalButtons _loopingButtons;
 
         private CustomSprite _crosshairSprite;
         private CustomSprite _crosshairBlueSprite;
@@ -67,6 +69,33 @@ namespace MapEditor
                 Visible = true,
             };
             _snappedButtons.Update();
+
+            _stackingButtons = new InstructionalButtons(
+                new InstructionalButton(Translation.Translate("Exit Tool"), Control.PhoneCancel),
+                new InstructionalButton(Translation.Translate("Abort Current Stacking"), Control.CreatorDelete),
+                new InstructionalButton(Translation.Translate("Multiplier"), Control.Sprint))
+            {
+                Visible = true,
+            };
+            _stackingButtons.Update();
+
+            _loopingButtons = new InstructionalButtons(
+                new InstructionalButton(Translation.Translate("Exit Tool"), Control.PhoneCancel),
+                new InstructionalButton(Translation.Translate("Abort Current Looping"), Control.CreatorDelete),
+                new InstructionalButton(Translation.Translate("Multiplier"), Control.Sprint))
+            {
+                Visible = true,
+            };
+            _loopingButtons.Update();
+        }
+
+        /// <summary>
+        /// The stacking and looping tools each own the object they were opened on and drive their own
+        /// controls, so whatever else the editor would do with those controls has to stand down.
+        /// </summary>
+        private bool IsGeneratorToolActive
+        {
+            get { return _stackingBase != null || _loopingBase != null; }
         }
 
         private void DrawButtons(InstructionalButtons buttons)
@@ -141,17 +170,19 @@ namespace MapEditor
 			Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, (int)Control.Phone);
 			Function.Call(Hash.HIDE_HUD_AND_RADAR_THIS_FRAME);
 
-			if (Game.IsControlJustPressed(Control.Enter) && !_isChoosingObject)
+			// The object picker has to stay out until the player has left the tool that owns the object.
+			// The two below it are already held off by AreAnyVisible.
+			if (Game.IsControlJustPressed(Control.Enter) && !_isChoosingObject && !IsGeneratorToolActive)
 			{
 			    BeginChoosingObject(ObjectTypes.Prop);
 			}
 
-			if (Game.IsControlJustPressed(Control.NextCamera) && !_isChoosingObject)
+			if (Game.IsControlJustPressed(Control.NextCamera) && !_isChoosingObject && !IsGeneratorToolActive)
 			{
 			    BeginChoosingObject(ObjectTypes.Vehicle);
 			}
 
-            if (Game.IsControlJustPressed(Control.FrontendPause) && !_isChoosingObject)
+            if (Game.IsControlJustPressed(Control.FrontendPause) && !_isChoosingObject && !IsGeneratorToolActive)
 			{
 			    BeginChoosingObject(ObjectTypes.Ped);
 			}
@@ -266,7 +297,17 @@ namespace MapEditor
             else if (Game.IsControlPressed(Control.CharacterWheel))
                 modifier = 0.3f;
 
-			if (_selectedProp == null && _selectedMarker == null)
+			// The base object stays put while its stack or its loop is being configured, so the tool takes
+			// the controls that would otherwise move the selected object.
+			if (_stackingBase != null)
+			{
+			    ProcessStacking();
+			}
+			else if (_loopingBase != null)
+			{
+			    ProcessLooping();
+			}
+			else if (_selectedProp == null && _selectedMarker == null)
 			{
 			    ProcessFreelook(hitEnt, mouseX, mouseY, movementModifier, modifier);
 			}
