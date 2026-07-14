@@ -108,14 +108,15 @@ namespace MapEditor
 
 		public void OnTick(object sender, EventArgs e)
 		{
-			// Load maps from "AutoloadMaps"
+			// The maps flagged for autoloading, plus anything left in the legacy "AutoloadMaps" folder.
 			if (!_hasLoaded)
 			{
-				AutoloadMaps();
+				AutoloadedMaps.LoadAll();
 				_hasLoaded = true;
 			}
 			_menuPool.Process();
 			PropStreamer.Tick();
+			AutoloadedMaps.Tick();
 			WarmObjectRows();
 
 			if (PropStreamer.EntityCount > 0 || PropStreamer.RemovedObjects.Count > 0 || PropStreamer.Markers.Count > 0 || PropStreamer.Pickups.Count > 0)
@@ -127,6 +128,17 @@ namespace MapEditor
 			{
 				_currentEntitiesItem.Enabled = false;
 				_currentEntitiesItem.Description = Translation.Translate("There are no current entities.");
+			}
+
+			if (AutoloadedMaps.Any)
+			{
+				_unloadAutoloadedItem.Enabled = true;
+				_unloadAutoloadedItem.AltTitle = AutoloadedMaps.MapCount.ToString();
+			}
+			else
+			{
+				_unloadAutoloadedItem.Enabled = false;
+				_unloadAutoloadedItem.AltTitle = "";
 			}
 
 			if (Game.IsControlPressed(Control.LookBehind) && Game.IsControlJustPressed(Control.FrontendLb) && !_menuPool.AreAnyVisible && _settings.Gamepad)

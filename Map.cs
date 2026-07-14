@@ -27,6 +27,11 @@ namespace MapEditor
         public string Description { get; set; }
         public string Filename { get; set; }
 
+        /// <summary>
+        /// Spawns this map on startup, without it becoming the map being edited. See <see cref="AutoloadedMaps"/>.
+        /// </summary>
+        public bool Autoload { get; set; }
+
         public Vector3? LoadingPoint { get; set; }
         public Vector3? TeleportPoint { get; set; }
 

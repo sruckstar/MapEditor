@@ -37,7 +37,16 @@ namespace MapEditor
 	    private readonly NativeMenu _currentObjectsMenu;
         private readonly NativeMenu _filepicker;
 
+		/// <summary>
+		/// The list of autoloaded maps to pick one to unload from. Only ever opened when more than one map is
+		/// loaded: with a single map there is nothing to pick and the row unloads it outright.
+		/// </summary>
+		private readonly NativeMenu _unloadAutoloadedMenu;
+
 	    private readonly NativeItem _currentEntitiesItem;
+
+		/// <summary>Greyed out until a map has actually been autoloaded, since there is nothing else to unload.</summary>
+		private readonly NativeItem _unloadAutoloadedItem;
 
         private readonly ObjectPool _menuPool = new ObjectPool();
 
@@ -134,6 +143,8 @@ namespace MapEditor
 
             if (!Directory.Exists("scripts\\MapEditor"))
                 Directory.CreateDirectory("scripts\\MapEditor");
+
+            UserMaps.EnsureFolder();
 
             ObjectDatabase.SetupRelationships();
 			LoadSettings();
@@ -238,7 +249,17 @@ namespace MapEditor
             loadMapItem.Activated += (sender, args) => BeginLoadMap();
             _mainMenu.Add(loadMapItem);
 
+            _unloadAutoloadedItem = new NativeItem(Translation.Translate("Unload Autoloaded Maps"),
+                Translation.Translate("Remove the maps that were loaded automatically when the script started."));
+            _unloadAutoloadedItem.Activated += (sender, args) => UnloadAutoloadedMaps();
+            _mainMenu.Add(_unloadAutoloadedItem);
+
             _menuPool.Add(_mainMenu);
+
+            _unloadAutoloadedMenu = new NativeMenu("Map Editor", "~b~" + Translation.Translate("UNLOAD AUTOLOADED MAPS"));
+            _unloadAutoloadedMenu.Buttons.Visible = false;
+            _unloadAutoloadedMenu.Parent = _mainMenu;
+            _menuPool.Add(_unloadAutoloadedMenu);
 
 			_formatMenu = new NativeMenu("Map Editor", "~b~" + Translation.Translate("SELECT FORMAT"));
 			_formatMenu.Buttons.Visible = false;
@@ -402,6 +423,45 @@ namespace MapEditor
             Compat.Notify("~b~~h~Map Editor~h~~w~~n~" + Translation.Translate("Loaded new map."));
         }
 
+        /// <summary>
+        /// Autoloaded maps are not part of the map being edited, so "New Map" leaves them standing: this is the
+        /// only thing that takes them away.
+        ///
+        /// With several maps loaded the player gets to say which one goes; with only one there is nothing to
+        /// choose between, so it goes on the spot rather than behind a menu holding a single row.
+        /// </summary>
+        private void UnloadAutoloadedMaps()
+        {
+            if (!AutoloadedMaps.Any) return;
+
+            if (AutoloadedMaps.MapCount == 1)
+            {
+                UnloadAutoloadedMap(0);
+                return;
+            }
+
+            RedrawUnloadAutoloadedMenu();
+            SetMenuVisible(_mainMenu, false);
+            SetMenuVisible(_unloadAutoloadedMenu, true);
+        }
+
+        private void UnloadAutoloadedMap(int index)
+        {
+            var name = AutoloadedMaps.Unload(index);
+            if (name == null) return;
+
+            Compat.Notify("~b~~h~Map Editor~h~~w~~n~" + Translation.Translate("Unloaded autoloaded map:") + " ~h~" + name + "~h~.");
+        }
+
+        private void UnloadAllAutoloadedMaps()
+        {
+            if (!AutoloadedMaps.Any) return;
+
+            var count = AutoloadedMaps.MapCount;
+            AutoloadedMaps.UnloadAll();
+            Compat.Notify("~b~~h~Map Editor~h~~w~~n~" + Translation.Translate("Unloaded autoloaded maps:") + " ~h~" + count + "~h~.");
+        }
+
         private void BeginSaveMap()
         {
             if (ModManager.CurrentMod != null)
@@ -551,47 +611,53 @@ namespace MapEditor
 			file.Close();
 	    }
 
-	    private void AutoloadMaps()
-	    {
-		    if(!Directory.Exists("scripts\\AutoloadMaps")) return;
-		    foreach (string file in Directory.GetFiles("scripts\\AutoloadMaps", "*.xml"))
-		    {
-			    LoadMap(file, MapSerializer.Format.NormalXml);
-		    }
-			foreach (string file in Directory.GetFiles("scripts\\AutoloadMaps", "*.ini"))
+		/// <summary>The extension a format is saved and looked for under.</summary>
+		private static string ExtensionFor(MapSerializer.Format format)
+		{
+			switch (format)
 			{
-				LoadMap(file, MapSerializer.Format.SimpleTrainer);
+				case MapSerializer.Format.SimpleTrainer: return ".ini";
+				case MapSerializer.Format.SpoonerLegacy: return ".SP00N";
+				case MapSerializer.Format.CSharpCode: return ".cs";
+				case MapSerializer.Format.Raw: return ".txt";
+				default: return ".xml";
 			}
+		}
+
+		/// <summary>
+		/// Finds the map behind the name the player typed. Saved maps live in <see cref="UserMaps.Folder"/>, so a
+		/// bare name is looked for there as well as beside the game, and the format's extension is filled in when
+		/// they left it off. Null when nothing answers to that name.
+		/// </summary>
+		private static string ResolveMapPath(string filename, MapSerializer.Format format)
+		{
+			if (string.IsNullOrWhiteSpace(filename)) return null;
+
+			filename = filename.Trim();
+
+			var names = new List<string> { filename };
+
+			var extension = ExtensionFor(format);
+			if (!filename.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+				names.Add(filename + extension);
+
+			foreach (var name in names)
+			{
+				if (File.Exists(name)) return name;
+
+				var inUserMaps = Path.Combine(UserMaps.Folder, name);
+				if (File.Exists(inUserMaps)) return inUserMaps;
+			}
+
+			return null;
 		}
 
 	    private void LoadMap(string filename, MapSerializer.Format format)
 	    {
-			if (String.IsNullOrWhiteSpace(filename) || !File.Exists(filename))
+		    filename = ResolveMapPath(filename, format);
+
+			if (filename == null)
 			{
-				if (File.Exists(filename + ".xml") && format == MapSerializer.Format.NormalXml)
-				{
-					LoadMap(filename + ".xml", MapSerializer.Format.NormalXml);
-					return;
-				}
-
-				if(File.Exists(filename + ".ini") && format == MapSerializer.Format.SimpleTrainer)
-				{
-					LoadMap(filename + ".ini", MapSerializer.Format.SimpleTrainer);
-					return;
-				}
-
-                if (File.Exists(filename + ".xml") && format == MapSerializer.Format.Menyoo)
-                {
-                    LoadMap(filename + ".xml", MapSerializer.Format.Menyoo);
-                    return;
-                }
-
-                if (File.Exists(filename + ".SP00N") && format == MapSerializer.Format.SpoonerLegacy)
-                {
-                    LoadMap(filename + ".SP00N", MapSerializer.Format.SpoonerLegacy);
-                    return;
-                }
-
                 Compat.Notify("~b~~h~Map Editor~h~~w~~n~" + Translation.Translate("The filename was empty or the file does not exist!"));
 				return;
 			}
@@ -777,6 +843,9 @@ namespace MapEditor
 			var tmpmap = new Map();
 			try
 			{
+				// A bare filename is relative to the game's own directory, which is where maps used to pile up.
+				var path = UserMaps.Resolve(filename);
+
 				tmpmap.Objects.AddRange(format == MapSerializer.Format.SimpleTrainer
 					? PropStreamer.GetAllEntities().Where(p => p.Type == ObjectTypes.Prop)
 					: PropStreamer.GetAllEntities());
@@ -784,8 +853,8 @@ namespace MapEditor
 				tmpmap.Markers.AddRange(PropStreamer.Markers);
 			    tmpmap.Metadata = PropStreamer.CurrentMapMetadata;
 
-				ser.Serialize(filename, tmpmap, format);
-				Compat.Notify("~b~~h~Map Editor~h~~w~~n~" + Translation.Translate("Saved current map as") + " ~h~" + filename + "~h~.");
+				ser.Serialize(path, tmpmap, format);
+				Compat.Notify("~b~~h~Map Editor~h~~w~~n~" + Translation.Translate("Saved current map as") + " ~h~" + path + "~h~.");
 			    _changesMade = 0;
 			}
 			catch (Exception e)

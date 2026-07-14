@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Xml;
 using System.Xml.Serialization;
 using GTA;
@@ -241,184 +242,199 @@ namespace MapEditor
                     File.WriteAllText(path, main);
                     break;
 				case Format.CSharpCode:
-			        string vehicles = "";
-			        string peds = "";
-			        string props = "";
-			        string markers = "";
-			        string pickups = "";
-			        string removedFromWorld = "            Prop returnedProp;\r\n";
+					var props = new StringBuilder();
+					var vehicles = new StringBuilder();
+					var peds = new StringBuilder();
+					var pickups = new StringBuilder();
+					var markers = new StringBuilder();
+					var removedFromWorld = new StringBuilder();
 
-					foreach (var prop in map.Objects)
+					foreach (var o in map.Objects)
 					{
-						if (prop.Position == new Vector3(0, 0, 0)) continue;
-                        
-						if (prop.Type == ObjectTypes.Vehicle)
+						if (o.Position == new Vector3(0, 0, 0)) continue;
+
+						switch (o.Type)
 						{
-							vehicles += String.Format("               GTA.World.CreateVehicle(new Model({0}), new GTA.Math.Vector3({1}f, {2}f, {3}f), {4}f);\r\n",
-								prop.Hash,
-								prop.Position.X.ToString(CultureInfo.InvariantCulture),
-								prop.Position.Y.ToString(CultureInfo.InvariantCulture),
-								prop.Position.Z.ToString(CultureInfo.InvariantCulture),
-								prop.Rotation.Z.ToString(CultureInfo.InvariantCulture)
-                            );
+							case ObjectTypes.Prop:
+							{
+								// A door hangs on its own hinge: it is spawned static so the game does not drop it,
+								// then unfrozen so the player can still swing it.
+								var dynamic = o.Dynamic && !o.Door;
+								var frozen = !o.Dynamic && !o.Door;
+
+								props.AppendFormat("        prop = World.CreatePropNoOffset(new Model({0}), {1}, {2}, {3});\r\n",
+									o.Hash, Vec(o.Position), Vec(o.Rotation), Bool(dynamic));
+								props.AppendFormat("        if (prop != null) {{ prop.LodDistance = LodDistance; prop.IsPositionFrozen = {0}; _entities.Add(prop); }}\r\n",
+									Bool(frozen));
+								break;
+							}
+							case ObjectTypes.Vehicle:
+							{
+								vehicles.AppendFormat("        vehicle = World.CreateVehicle(new Model({0}), {1}, {2});\r\n",
+									o.Hash, Vec(o.Position), Float(o.Rotation.Z));
+								vehicles.AppendFormat("        if (vehicle != null) {{ vehicle.LodDistance = LodDistance; vehicle.Mods.PrimaryColor = (VehicleColor){0}; vehicle.Mods.SecondaryColor = (VehicleColor){1}; vehicle.IsSirenActive = {2}; vehicle.IsPositionFrozen = {3}; _entities.Add(vehicle); }}\r\n",
+									o.PrimaryColor, o.SecondaryColor, Bool(o.SirensActive), Bool(!o.Dynamic));
+								break;
+							}
+							case ObjectTypes.Ped:
+							{
+								// Peds are placed by their feet, props by their centre: the editor stores the centre.
+								var position = o.Position - new Vector3(0f, 0f, 1f);
+
+								peds.AppendFormat("        ped = World.CreatePed(new Model({0}), {1}, {2});\r\n",
+									o.Hash, Vec(position), Float(o.Rotation.Z));
+								peds.Append("        if (ped != null)\r\n        {\r\n");
+								peds.AppendFormat("            ped.IsPositionFrozen = {0};\r\n", Bool(!o.Dynamic));
+
+								if (o.Weapon.HasValue && o.Weapon.Value != WeaponHash.Unarmed)
+									peds.AppendFormat("            ped.Weapons.Give({0}, 999, true, true);\r\n", WeaponLiteral(o.Weapon.Value));
+
+								foreach (var line in ScenarioLines(o.Action))
+									peds.AppendFormat("            {0}\r\n", line);
+
+								peds.Append("            _entities.Add(ped);\r\n        }\r\n");
+								break;
+							}
+							case ObjectTypes.Pickup:
+							{
+								// No SHVDN wrapper takes a bare pickup hash: CreatePickup wants a PickupType plus the
+								// model to stand in for it, and the editor only ever knew the hash.
+								pickups.AppendFormat("        _pickups.Add(Function.Call<int>(Hash.CREATE_PICKUP_ROTATE, {0}, {1}, {2}, {3}, 0f, 0f, {4}, 515, {5}, 0, false, 0));\r\n",
+									o.Hash, Float(o.Position.X), Float(o.Position.Y), Float(o.Position.Z), Float(o.Rotation.Z), o.Amount);
+								break;
+							}
 						}
-						else if (prop.Type == ObjectTypes.Ped)
-						{
-							peds += String.Format("                GTA.World.CreatePed(new Model({0}), new GTA.Math.Vector3({1}f, {2}f, {3}f), {4}f);\r\n",
-								prop.Hash,
-								prop.Position.X.ToString(CultureInfo.InvariantCulture),
-								prop.Position.Y.ToString(CultureInfo.InvariantCulture),
-								prop.Position.Z.ToString(CultureInfo.InvariantCulture),
-								prop.Rotation.Z.ToString(CultureInfo.InvariantCulture)
-                            );
-						}
-						else if (prop.Type == ObjectTypes.Prop)
-						{
-							props += String.Format("                Props.Add(createProp({0}, new GTA.Math.Vector3({1}f, {2}f, {3}f), new GTA.Math.Vector3({4}f, {5}f, {6}f), {7}));\r\n",
-								prop.Hash,
-								prop.Position.X.ToString(CultureInfo.InvariantCulture),
-								prop.Position.Y.ToString(CultureInfo.InvariantCulture),
-								prop.Position.Z.ToString(CultureInfo.InvariantCulture),
-								prop.Rotation.X.ToString(CultureInfo.InvariantCulture),
-								prop.Rotation.Y.ToString(CultureInfo.InvariantCulture),
-								prop.Rotation.Z.ToString(CultureInfo.InvariantCulture),
-                                prop.Dynamic.ToString().ToLower()
-							);
-						}
-                        else if (prop.Type == ObjectTypes.Pickup)
-                        {
-                            pickups += string.Format("              Function.Call<int>(Hash.CREATE_PICKUP_ROTATE, {0}, {1}f, {2}f, {3}f, 0, 0, 0, 515, {4}, 0, false, 0);\r\n",
-                                prop.Hash,
-                                prop.Position.X.ToString(CultureInfo.InvariantCulture),
-                                prop.Position.Y.ToString(CultureInfo.InvariantCulture),
-                                prop.Position.Z.ToString(CultureInfo.InvariantCulture),
-                                prop.Amount);
-                        }
 					}
 
-			        foreach (var marker in map.Markers)
-			        {
-			            markers += string.Format("            Function.Call(Hash.DRAW_MARKER, {0}," +
-			                                     "{1}f, {2}f, {3}f, " +
-			                                     "0f, 0f, 0f, {4}f, {5}f, {6}f, " +
-			                                     "{7}f, {8}f, {9}f, " +
-			                                     "{10}, {11}, {12}, {13}, " +
-			                                     "{14}, {15}, 2, false, false, false);\r\n",
+					foreach (var marker in map.Markers)
+					{
+						markers.AppendFormat("        World.DrawMarker((MarkerType){0}, {1}, Vector3.Zero, {2}, {3}, Color.FromArgb({4}, {5}, {6}, {7}), {8}, {9});\r\n",
+							(int) marker.Type, Vec(marker.Position), Vec(marker.Rotation), Vec(marker.Scale),
+							marker.Alpha, marker.Red, marker.Green, marker.Blue,
+							Bool(marker.BobUpAndDown), Bool(marker.RotateToCamera));
+					}
 
-			                (int)marker.Type, marker.Position.X.ToString(CultureInfo.InvariantCulture), marker.Position.Y.ToString(CultureInfo.InvariantCulture), marker.Position.Z.ToString(CultureInfo.InvariantCulture), marker.Rotation.X.ToString(CultureInfo.InvariantCulture),
-			                marker.Rotation.Y.ToString(CultureInfo.InvariantCulture), marker.Rotation.Z.ToString(CultureInfo.InvariantCulture), marker.Scale.X.ToString(CultureInfo.InvariantCulture), marker.Scale.Y.ToString(CultureInfo.InvariantCulture), marker.Scale.Z.ToString(CultureInfo.InvariantCulture), marker.Red,
-			                marker.Green, marker.Blue, marker.Alpha, marker.BobUpAndDown.ToString().ToLower(),
-			                marker.RotateToCamera.ToString().ToLower());
-			        }
+					foreach (var o in map.RemoveFromWorld)
+					{
+						removedFromWorld.AppendFormat("        worldProp = World.GetClosestProp({0}, 1f, new Model({1}));\r\n",
+							Vec(o.Position), o.Hash);
+						removedFromWorld.Append("        if (worldProp != null && worldProp.Exists() && !_entities.Contains(worldProp)) worldProp.Delete();\r\n");
+					}
 
-			        foreach (var o in map.RemoveFromWorld)
-			        {
-			            removedFromWorld += string.Format(
-                            @"            returnedProp = Function.Call<Prop>(Hash.GET_CLOSEST_OBJECT_OF_TYPE, {0}f, {1}f, {2}f, 1f, {3}, 0);
-            if (returnedProp != null && returnedProp.Handle != 0 && !Props.Contains(returnedProp.Handle))
-                returnedProp.Delete();" + "\r\n",
-                            o.Position.X.ToString(CultureInfo.InvariantCulture), o.Position.Y.ToString(CultureInfo.InvariantCulture), o.Position.Z.ToString(CultureInfo.InvariantCulture), o.Hash);
-			        }
+					// Declaring a variable that no object ends up assigning would only draw a compiler warning in
+					// the map the player is handed.
+					var declarations = new StringBuilder();
+					if (props.Length > 0) declarations.Append("        Prop prop;\r\n");
+					if (vehicles.Length > 0) declarations.Append("        Vehicle vehicle;\r\n");
+					if (peds.Length > 0) declarations.Append("        Ped ped;\r\n");
+					if (declarations.Length > 0) declarations.Append("\r\n");
 
-                    
-
-			        string finalOutput = string.Format(@"using System;
+					string finalOutput = string.Format(@"using System;
 using System.Collections.Generic;
+using System.Drawing;
 using GTA;
 using GTA.Math;
 using GTA.Native;
 
-
-public class MapEditorGeneratedMap : GTA.Script
+/// <summary>
+/// Generated by Map Editor. Drop this file into your scripts folder and the map spawns with the game.
+/// </summary>
+public class MapEditorGeneratedMap : Script
 {{
+    /// <summary>How far away the map's props stay drawn, in metres.</summary>
+    private const int LodDistance = 3000;
+
+    private readonly List<Entity> _entities = new List<Entity>();
+    private readonly List<int> _pickups = new List<int>();
+    private bool _spawned;
+
     public MapEditorGeneratedMap()
     {{
-        List<int> Props = new List<int>();
-        int LodDistance = 3000;            
-
-        Func<int, Vector3, Vector3, bool, int> createProp = new Func<int, Vector3, Vector3, bool, int>(delegate(int hash, Vector3 pos, Vector3 rot, bool dynamic)
-	    {{
-		    Model model = new Model(hash);
-		    model.Request(10000);
-		    Prop prop = GTA.World.CreateProp(model, pos, rot, dynamic, false);
-		    prop.Position = pos;
-            prop.LodDistance = LodDistance;
-            if (!dynamic)
-                prop.IsPositionFrozen = true;
-		    return prop.Handle;
-	    }});
-
-        bool Initialized = false;
-
-
-        base.Tick += delegate (object sender, EventArgs args)
-        {{
-            if (!Initialized)
-            {{
-                /* PROPS */
-{0}
-
-                /* VEHICLES */
-{1}
-
-                /* PEDS */
-{2}
-
-                /* PICKUPS */
-{4}
-                Initialized = true;
-            }}
-
-            /* MARKERS */
-{3}
-
-            /* WORLD */
-{5}
-        }};
+        Tick += OnTick;
+        Aborted += OnAborted;
     }}
-}}", props, vehicles, peds, markers, pickups, removedFromWorld);
 
-                    using (var stream = new StreamWriter(new FileStream(path, File.Exists(path) ? FileMode.Truncate : FileMode.CreateNew)))
-                    {
-                        stream.Write(finalOutput);
-                    }
-                        break;
+    private void OnTick(object sender, EventArgs e)
+    {{
+        if (!_spawned)
+        {{
+            SpawnMap();
+            _spawned = true;
+        }}
+
+        DrawMarkers();
+        RemoveWorldObjects();
+    }}
+
+    /// <summary>
+    /// The map belongs to this script, so it leaves with it: without this a reload would stack a second
+    /// copy of every prop on top of the first.
+    /// </summary>
+    private void OnAborted(object sender, EventArgs e)
+    {{
+        foreach (Entity entity in _entities)
+        {{
+            if (entity != null && entity.Exists())
+                entity.Delete();
+        }}
+
+        foreach (int pickup in _pickups)
+            Function.Call(Hash.REMOVE_PICKUP, pickup);
+
+        _entities.Clear();
+        _pickups.Clear();
+    }}
+
+    private void SpawnMap()
+    {{
+{0}        /* PROPS */
+{1}
+        /* VEHICLES */
+{2}
+        /* PEDS */
+{3}
+        /* PICKUPS */
+{4}    }}
+
+    /// <summary>Markers are not entities: they only exist for the frame they are drawn in.</summary>
+    private void DrawMarkers()
+    {{
+{5}    }}
+
+    /// <summary>
+    /// The game streams its own props back in as the player comes and goes, so the ones the map deletes
+    /// have to be swept every tick rather than once at startup.
+    /// </summary>
+    private void RemoveWorldObjects()
+    {{
+{6}{7}    }}
+}}",
+						declarations,
+						props,
+						vehicles,
+						peds,
+						pickups,
+						markers,
+						removedFromWorld.Length > 0 ? "        Prop worldProp;\r\n\r\n" : "",
+						removedFromWorld);
+
+					File.WriteAllText(path, finalOutput);
+					break;
 				case Format.Raw:
-					string flush = "";
+					var raw = new StringBuilder();
+					var rawCounter = 1;
 					foreach (var prop in map.Objects)
 					{
 						if (prop.Position == new Vector3(0, 0, 0)) continue;
-						string name = "";
-						ObjectTypes thisType = ObjectTypes.Prop;
 
-						if (prop.Type == ObjectTypes.Vehicle)
-						{
-							name = ObjectDatabase.VehicleDb.First(pair => pair.Value == prop.Hash).Key;
-							thisType = ObjectTypes.Vehicle;
-						}
-						if (prop.Type == ObjectTypes.Ped)
-						{
-							name = ObjectDatabase.PedDb.First(pair => pair.Value == prop.Hash).Key;
-							thisType = ObjectTypes.Ped;
-						}
-						if (prop.Type == ObjectTypes.Prop)
-						{
-							name = ObjectDatabase.MainDb.First(pair => pair.Value == prop.Hash).Key;
-							thisType = ObjectTypes.Prop;
-						}
-						flush += String.Format("{8} name = {0}, hash = {7}, x = {1}, y = {2}, z = {3}, rotationx = {4}, rotationy = {5}, rotationz = {6}\r\n",
-							name,
-							prop.Position.X,
-							prop.Position.Y,
-							prop.Position.Z,
-							prop.Rotation.X,
-							prop.Rotation.Y,
-							prop.Rotation.Z,
-							prop.Hash,
-							thisType
-						);
+						// The same model is usually placed many times over, so the section name carries a counter:
+						// a repeated header would leave every reader but the last copy behind.
+						raw.AppendFormat("[{0}_{1}]\r\n", GetModelName(prop), rawCounter);
+						raw.AppendFormat("pos = {0}, {1}, {2}\r\n", Float(prop.Position.X), Float(prop.Position.Y), Float(prop.Position.Z));
+						raw.AppendFormat("angle = {0}\r\n\r\n", Float(prop.Rotation.Z));
+						rawCounter++;
 					}
-					File.WriteAllText(path, flush);
+					File.WriteAllText(path, raw.ToString());
 					break;
                 case Format.Menyoo:
                     XmlSerializer menSer = new XmlSerializer(typeof(MenyooCompatibility.SpoonerPlacements));
@@ -448,6 +464,75 @@ public class MapEditorGeneratedMap : GTA.Script
                     menF.Close();
                     break;
             }
+		}
+
+		/// <summary>
+		/// A float as both formats want to read it: never in the current culture's decimal comma, never in
+		/// scientific notation, and always with the fractional part and the suffix that make it a C# literal.
+		/// </summary>
+		private static string Float(float value)
+		{
+			return value.ToString("0.0####", CultureInfo.InvariantCulture) + "f";
+		}
+
+		private static string Vec(Vector3 value)
+		{
+			return string.Format("new Vector3({0}, {1}, {2})", Float(value.X), Float(value.Y), Float(value.Z));
+		}
+
+		private static string Bool(bool value)
+		{
+			return value ? "true" : "false";
+		}
+
+		/// <summary>The model's name, falling back to its hash for a model no list knows.</summary>
+		private static string GetModelName(MapObject obj)
+		{
+			if (obj.Type == ObjectTypes.Pickup)
+			{
+				return Enum.IsDefined(typeof (ObjectDatabase.PickupHash), obj.Hash)
+					? ((ObjectDatabase.PickupHash) obj.Hash).ToString()
+					: obj.Hash.ToString(CultureInfo.InvariantCulture);
+			}
+
+			return ObjectDatabase.NameFor(obj.Type, obj.Hash) ?? obj.Hash.ToString(CultureInfo.InvariantCulture);
+		}
+
+		/// <summary>A weapon named where SHVDN knows the name, cast from the raw hash where it does not.</summary>
+		private static string WeaponLiteral(WeaponHash weapon)
+		{
+			return Enum.IsDefined(typeof (WeaponHash), weapon)
+				? "WeaponHash." + weapon
+				: string.Format("(WeaponHash)0x{0:X}u", (uint) weapon);
+		}
+
+		/// <summary>
+		/// The idle action a ped was given in the editor, as the calls that reproduce it. The scenario names the
+		/// editor shows are its own labels; the game only knows the strings <see cref="ObjectDatabase.ScrenarioDatabase"/>
+		/// maps them to.
+		/// </summary>
+		private static IEnumerable<string> ScenarioLines(string action)
+		{
+			if (string.IsNullOrEmpty(action) || action == "None")
+				yield break;
+
+			switch (action)
+			{
+				case "Any":
+				case "Any - Walk":
+					yield return "Function.Call(Hash.TASK_USE_NEAREST_SCENARIO_TO_COORD, ped, ped.Position.X, ped.Position.Y, ped.Position.Z, 100f, -1);";
+					yield break;
+				case "Any - Warp":
+					yield return "Function.Call(Hash.TASK_USE_NEAREST_SCENARIO_TO_COORD_WARP, ped, ped.Position.X, ped.Position.Y, ped.Position.Z, 100f, -1);";
+					yield break;
+				case "Wander":
+					yield return "ped.Task.WanderAround();";
+					yield break;
+			}
+
+			string scenario;
+			if (ObjectDatabase.ScrenarioDatabase.TryGetValue(action, out scenario))
+				yield return string.Format("Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, ped, \"{0}\", 0, 0);", scenario);
 		}
 	}
 }

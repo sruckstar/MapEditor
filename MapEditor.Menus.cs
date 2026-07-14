@@ -885,7 +885,9 @@ namespace MapEditor
 
         private void RedrawFilepickerMenu(string folder = null)
         {
-            if (folder == null) folder = Directory.GetCurrentDirectory();
+            // Saved maps all live in one folder, so the picker opens there instead of at the game's root. The
+            // ".." row still leads back out for a map that came from somewhere else.
+            if (folder == null) folder = Path.GetFullPath(UserMaps.EnsureFolder());
             _filepicker.Clear();
             _filepicker.Name = "~b~" + GetSafeShortReverseString(folder, 30);
 
@@ -986,6 +988,60 @@ namespace MapEditor
                 _filepicker.SelectedIndex = 0;
         }
 
+        /// <summary>
+        /// One row per autoloaded map, and the red row underneath that takes them all at once. Only ever reached
+        /// with more than one map loaded — <see cref="UnloadAutoloadedMaps"/> unloads a lone map on the spot.
+        /// </summary>
+        private void RedrawUnloadAutoloadedMenu()
+        {
+            _unloadAutoloadedMenu.Clear();
+
+            var names = AutoloadedMaps.Names.ToList();
+            for (var i = 0; i < names.Count; i++)
+            {
+                var index = i;
+                var item = new NativeItem(GetSafeShortString(names[i], 40),
+                    Translation.Translate("Remove this map from the world. The other autoloaded maps stay."));
+
+                item.Activated += (sender, args) =>
+                {
+                    UnloadAutoloadedMap(index);
+                    LeaveUnloadAutoloadedMenu();
+                };
+
+                _unloadAutoloadedMenu.Add(item);
+            }
+
+            var allItem = new NativeItem("~r~" + Translation.Translate("Unload All Maps"),
+                Translation.Translate("Remove every autoloaded map from the world."));
+
+            allItem.Activated += (sender, args) =>
+            {
+                UnloadAllAutoloadedMaps();
+                LeaveUnloadAutoloadedMenu();
+            };
+
+            _unloadAutoloadedMenu.Add(allItem);
+            _unloadAutoloadedMenu.SelectedIndex = 0;
+        }
+
+        /// <summary>
+        /// A map just went, so the rows below it are stale and their indices have shifted: the list is rebuilt
+        /// around what is left. Once fewer than two maps remain there is nothing to choose between, and the menu
+        /// hands back to the main menu, whose row unloads the last map outright.
+        /// </summary>
+        private void LeaveUnloadAutoloadedMenu()
+        {
+            if (AutoloadedMaps.MapCount > 1)
+            {
+                RedrawUnloadAutoloadedMenu();
+                return;
+            }
+
+            SetMenuVisible(_unloadAutoloadedMenu, false);
+            SetMenuVisible(_mainMenu, true);
+        }
+
         private void RedrawMetadataMenu()
         {
             _metadataMenu.Clear();
@@ -1073,6 +1129,19 @@ namespace MapEditor
                 };
 
                 _metadataMenu.Add(descItem);
+            }
+
+            {
+                var autoloadItem = new NativeCheckboxItem(Translation.Translate("Autoload This Map"),
+                    Translation.Translate("Spawn this map whenever the script starts. Autoloaded maps stay out of the map you are editing; unload them from the main menu."),
+                    PropStreamer.CurrentMapMetadata.Autoload);
+
+                autoloadItem.CheckboxChanged += (sender, item) =>
+                {
+                    PropStreamer.CurrentMapMetadata.Autoload = autoloadItem.Checked;
+                };
+
+                _metadataMenu.Add(autoloadItem);
             }
 
             _metadataMenu.Add(saveItem);
