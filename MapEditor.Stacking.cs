@@ -371,10 +371,6 @@ namespace MapEditor
                 return;
             }
 
-            Screen.ShowHelpTextThisFrame(Translation.Translate(
-                "Configure your objects stack and press SAVE in the menu or press ~INPUT_CREATOR_DELETE~ to abort current object stacking."),
-                false);
-
             DrawEntityBox(_stackingBase, StackBaseColor);
 
             int total = 0;

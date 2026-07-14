@@ -601,10 +601,6 @@ namespace MapEditor
                 return;
             }
 
-            Screen.ShowHelpTextThisFrame(Translation.Translate(
-                "Configure your looping and press SAVE in the menu or press ~INPUT_CREATOR_DELETE~ to abort current looping creation."),
-                false);
-
             DrawEntityBox(_loopingBase, LoopBaseColor);
             DrawLoopGuide();
 
