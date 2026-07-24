@@ -610,3 +610,8 @@ xs_prop_arena_pipe_track_s_01b
 xs_prop_track_slowdown
 xs_prop_track_slowdown_t1
 xs_prop_track_slowdown_t2
+m26_1_prop_m61_helitrailer_01a
+m26_1_prop_m61_manholecover_01a
+m26_1_prop_m61_manholekey_01a
+m26_1_prop_m61_tracker_01a
+m26_1_prop_m61_trafficdiv_01a

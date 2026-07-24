@@ -306,3 +306,6 @@ xs_prop_arena_cash_pile_l
 xs_prop_arena_cash_pile_m
 xs_prop_arena_cash_pile_s
 xs_prop_trophy_goldbag_01a
+m26_1_prop_m61_methchiller_01a
+m26_1_prop_m61_methkit_01a
+m26_1_prop_m61_vault_drill_01a

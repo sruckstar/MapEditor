@@ -318,3 +318,5 @@ xs_terrain_rockpile_1_03_small
 xs_terrain_rockpile_arena_1_01
 xs_terrain_rockpile_arena_1_02
 xs_terrain_rockpile_arena_1_03
+m26_1_prop_m61_shinystones_01a
+m26_1_prop_m61_shinystones_02a

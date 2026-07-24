@@ -502,3 +502,8 @@ xs_prop_trophy_flags_01a
 xs_propint3_waste_01_neon
 xs_propint4_waste_06_neon
 xs_propint4_waste_07_neon
+m26_1_prop_m61_bottomdollarsign_01a
+m26_1_prop_m61_papersign_01a
+m26_1_prop_m61_papersign_02a
+m26_1_prop_m61_sign_securo_01a
+m26_1_prop_m61_vansign_01a

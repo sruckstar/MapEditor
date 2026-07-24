@@ -1125,3 +1125,7 @@ xs_propint2_barrier_01
 xs_propint3_waste04_wall
 xs_propint4_waste_09_lollywall
 xs_propintarena_wall_no_pit
+m26_1_prop_m61_airconfence_01a
+m26_1_prop_m61_cctv_wallmount_01a
+m26_1_prop_m61_sewer_gate
+m26_1_prop_m61_wall_blocker_01a

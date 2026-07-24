@@ -792,3 +792,7 @@ xs_prop_x18_tool_draw_01e
 xs_prop_x18_tool_draw_01x
 xs_prop_x18_tool_draw_drink
 xs_prop_x18_tool_draw_rc_cab
+m26_1_prop_m61_forkliftsuit_01a
+m26_1_prop_m61_skylightbeam_01a
+m26_1_prop_m61_tool_clipremoval_01a
+m26_1_prop_m61_ventdamaged_01a

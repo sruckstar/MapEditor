@@ -187,6 +187,12 @@ namespace MapEditor
 			ObjectDatabase.LoadFromFile("scripts\\PedList.ini", ref ObjectDatabase.PedDb);
             ObjectDatabase.LoadFromFile("scripts\\VehicleList.ini", ref ObjectDatabase.VehicleDb);
 
+			// Vehicles and peds are just the game's own hash enums. Without the flat lists (now
+			// replaced by the category files) they would start empty, so rebuild them from the enums
+			// as a fallback; the category files then reorder them into browsable groups.
+			if (ObjectDatabase.VehicleDb.Count == 0 || ObjectDatabase.PedDb.Count == 0)
+				ObjectDatabase.LoadEnumDatabases();
+
 			// Must follow the three lists above: the categories are a view over them, and loading one
 			// can fold a hand-added model name back into its database.
 			ObjectCategories.LoadAll();

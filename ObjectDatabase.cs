@@ -168,8 +168,6 @@ namespace MapEditor
 				if (PedDb.ContainsKey(ped)) continue;
 				PedDb.Add(ped, (int)hash);
 			}
-
-            WriteEnumDatabase();
 		}
 
         internal static void WriteEnumDatabase()
@@ -194,6 +192,10 @@ namespace MapEditor
         {
             dictToLoadto = new Dictionary<string, int>();
             ResetNameCache();
+            // The flat lists no longer ship in scripts\; the data now lives in the category files
+            // under scripts\MapEditor\Categories\, which ObjectCategories folds back into these
+            // dictionaries. A missing list is therefore normal and must not abort the script.
+            if (!File.Exists(path)) return;
             string[] lines = File.ReadAllLines(path);
             foreach (string line in lines)
             {

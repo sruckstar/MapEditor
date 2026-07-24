@@ -45,7 +45,8 @@
 
   <ItemGroup>
     <None Include="ObjectList.ini" />
-    <!-- Copied to scripts\MapEditor\Categories\ alongside ObjectList.ini; read by ObjectCategories.cs. -->
+    <!-- Deployed to scripts\MapEditor\Categories\ and read by ObjectCategories.cs; these are now the
+         source of truth, so the flat scripts\*.ini lists are optional. -->
     <None Include="Categories\**\*.txt" />
     <None Include="Categories\README.md" />
     <None Include="tools\generate_categories.py" />
