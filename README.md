@@ -1,6 +1,6 @@
 <img width="1536" height="1024" alt="sp" src="https://github.com/user-attachments/assets/0b6ba6b4-79f7-426e-888a-678f52c543a5" />
 
-See also: [MapEditor for FiveM]([url](https://github.com/sruckstar/MapEditor-FiveM))
+See also: [MapEditor for FiveM](https://github.com/sruckstar/MapEditor-FiveM)
 
 Guadmaz's classic Map Editor is now on ScriptHookDotNet 3, LemonUI, and has many new features for creating maps in GTA 5.
 
